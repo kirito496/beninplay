@@ -1,0 +1,990 @@
+import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import '../../core/constants/app_colors.dart';
+import '../../shared/models/video_model.dart';
+
+class VideoFeedScreen extends StatefulWidget {
+  final bool isDark;
+  final int startIndex;
+  const VideoFeedScreen({super.key, this.isDark = false, this.startIndex = 0});
+
+  @override
+  State<VideoFeedScreen> createState() => _VideoFeedScreenState();
+}
+
+class _VideoFeedScreenState extends State<VideoFeedScreen> {
+  late final PageController _pageController;
+  int _currentIndex = 0;
+  late List<VideoModel> _videos;
+
+  @override
+  void initState() {
+    super.initState();
+    _videos = widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal;
+    _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _TabButton(label: 'Pour toi', isSelected: true, onTap: () {}),
+            const SizedBox(width: 20),
+            _TabButton(label: 'Abonnements', isSelected: false, onTap: () {}),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: Colors.white, size: 26),
+            onPressed: () => _showSearch(context),
+          ),
+        ],
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        scrollDirection: Axis.vertical,
+        itemCount: _videos.length,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemBuilder: (context, index) => _VideoPage(
+          video: _videos[index],
+          isActive: index == _currentIndex,
+        ),
+      ),
+    );
+  }
+
+  void _showSearch(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _SearchSheet(),
+    );
+  }
+}
+
+// ── Recherche ─────────────────────────────────────────────────────────────────
+
+class _SearchSheet extends StatefulWidget {
+  const _SearchSheet();
+
+  @override
+  State<_SearchSheet> createState() => _SearchSheetState();
+}
+
+class _SearchSheetState extends State<_SearchSheet> {
+  final _controller = TextEditingController();
+  List<String> _results = [];
+  final List<String> _trending = [
+    '#DanceBénin', '#CuisineBéninoise', '#HumourBénin',
+    '#BeninPlay', '#CotoviVibes', '#VodounVibes',
+  ];
+
+  void _search(String query) {
+    if (query.isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    setState(() {
+      _results = [
+        'Vidéo : $query au Bénin',
+        'Créateur : @${query.toLowerCase()}',
+        '#${query.replaceAll(' ', '')}',
+        'Son : $query remix',
+      ];
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.9,
+      builder: (_, ctrl) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                onChanged: _search,
+                decoration: InputDecoration(
+                  hintText: 'Rechercher vidéos, créateurs, #hashtags...',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                  prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                  suffixIcon: _controller.text.isNotEmpty
+                      ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.white38),
+                    onPressed: () {
+                      _controller.clear();
+                      _search('');
+                    },
+                  )
+                      : null,
+                  filled: true,
+                  fillColor: Colors.white12,
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                controller: ctrl,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  if (_results.isEmpty) ...[
+                    const Text(
+                      '🔥 Tendances',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _trending.map((t) => GestureDetector(
+                        onTap: () {
+                          _controller.text = t;
+                          _search(t);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            t,
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      )).toList(),
+                    ),
+                  ] else
+                    ..._results.map((r) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        r.startsWith('#') ? Icons.tag
+                            : r.startsWith('Créateur') ? Icons.person
+                            : r.startsWith('Son') ? Icons.music_note
+                            : Icons.play_circle_outline,
+                        color: Colors.white54,
+                      ),
+                      title: Text(r, style: const TextStyle(color: Colors.white)),
+                      onTap: () => Navigator.pop(context),
+                    )),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Page vidéo ────────────────────────────────────────────────────────────────
+
+class _VideoPage extends StatefulWidget {
+  final VideoModel video;
+  final bool isActive;
+  const _VideoPage({required this.video, required this.isActive});
+
+  @override
+  State<_VideoPage> createState() => _VideoPageState();
+}
+
+class _VideoPageState extends State<_VideoPage> {
+  late VideoPlayerController _controller;
+  bool _isInitialized = false;
+  bool _isLiked = false;
+  bool _isFollowing = false;
+  int _likes = 0;
+  bool _showPauseIcon = false;
+  bool _isBuffering = false;
+  bool _showDescription = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _likes = widget.video.likes;
+    _isLiked = widget.video.isLiked;
+    _initVideo();
+  }
+
+  Future<void> _initVideo() async {
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.video.videoUrl),
+      videoPlayerOptions: VideoPlayerOptions(
+        mixWithOthers: false,
+        allowBackgroundPlayback: false,
+      ),
+    );
+    _controller.addListener(() {
+      if (!mounted) return;
+      if (_controller.value.isBuffering != _isBuffering) {
+        setState(() => _isBuffering = _controller.value.isBuffering);
+      }
+    });
+    await _controller.initialize();
+    _controller.setLooping(true);
+    if (widget.isActive) { _controller.play(); }
+    if (mounted) { setState(() => _isInitialized = true); }
+  }
+
+  @override
+  void didUpdateWidget(_VideoPage old) {
+    super.didUpdateWidget(old);
+    if (widget.isActive && !old.isActive) {
+      _controller.play();
+    } else if (!widget.isActive && old.isActive) {
+      _controller.pause();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() {
+    setState(() {
+      if (_controller.value.isPlaying) {
+        _controller.pause();
+      } else {
+        _controller.play();
+      }
+      _showPauseIcon = true;
+    });
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) { setState(() => _showPauseIcon = false); }
+    });
+  }
+
+  void _toggleLike() => setState(() {
+    _isLiked = !_isLiked;
+    _likes += _isLiked ? 1 : -1;
+  });
+
+  void _toggleFollow() {
+    setState(() => _isFollowing = !_isFollowing);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isFollowing
+              ? 'Vous suivez @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}'
+              : 'Vous ne suivez plus ce créateur',
+        ),
+        backgroundColor: _isFollowing ? AppColors.primary : Colors.grey,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _share() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Partager la vidéo',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ShareOption(
+                  icon: Icons.link,
+                  label: 'Copier lien',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Lien copié !'),
+                        backgroundColor: AppColors.primary,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+                _ShareOption(
+                  icon: Icons.chat,
+                  label: 'WhatsApp',
+                  color: const Color(0xFF25D366),
+                  onTap: () => Navigator.pop(context),
+                ),
+                _ShareOption(
+                  icon: Icons.facebook,
+                  label: 'Facebook',
+                  color: const Color(0xFF1877F2),
+                  onTap: () => Navigator.pop(context),
+                ),
+                _ShareOption(
+                  icon: Icons.send,
+                  label: 'Message',
+                  onTap: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _subscribe() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            CircleAvatar(
+              radius: 36,
+              backgroundColor: AppColors.primary,
+              child: Text(
+                widget.video.creatorName[0],
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.video.creatorName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Soutenez ce créateur',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Envoyer un tip',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [100, 250, 500, 1000].map((amount) =>
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Tip de $amount FCFA envoyé à ${widget.video.creatorName} ❤️'),
+                          backgroundColor: AppColors.primary,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+                      ),
+                      child: Text(
+                        '$amount F',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ).toList(),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('S\'abonner au créateur — 2 000 FCFA/mois'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Vidéo ────────────────────────────────────────────────────────
+        GestureDetector(
+          onTap: _togglePlayPause,
+          child: Container(
+            color: Colors.black,
+            child: _isInitialized
+                ? FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller.value.size.width,
+                height: _controller.value.size.height,
+                child: VideoPlayer(_controller),
+              ),
+            )
+                : const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          ),
+        ),
+
+        // ── Icône pause/play ─────────────────────────────────────────────
+        if (_showPauseIcon)
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _controller.value.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                color: Colors.white,
+                size: 52,
+              ),
+            ),
+          ),
+
+        // ── Buffering ────────────────────────────────────────────────────
+        if (_isBuffering && _isInitialized)
+          const Center(
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+            ),
+          ),
+
+        // ── Gradient bas ─────────────────────────────────────────────────
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.transparent, Colors.black38, Colors.black87],
+                  stops: [0, 0.45, 0.75, 1],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // ── Infos créateur + description (BAS GAUCHE) ────────────────────
+        Positioned(
+          left: 16,
+          right: 80,
+          bottom: bottomPadding + 70,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _toggleFollow,
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.primary,
+                      child: Text(
+                        widget.video.creatorName[0],
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _toggleFollow,
+                    child: Text(
+                      '@${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _toggleFollow,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _isFollowing ? Colors.white24 : Colors.transparent,
+                        border: Border.all(
+                          color: _isFollowing ? Colors.white54 : Colors.white,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        _isFollowing ? 'Abonné ✓' : 'Suivre',
+                        style: TextStyle(
+                          color: _isFollowing ? Colors.white70 : Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Text(
+                widget.video.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+
+              if (widget.video.description != null) ...[
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () => setState(() => _showDescription = !_showDescription),
+                  child: Text(
+                    _showDescription
+                        ? widget.video.description!
+                        : '${widget.video.description!.substring(0, widget.video.description!.length.clamp(0, 40))}... voir plus',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    maxLines: _showDescription ? 5 : 1,
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 6),
+              const Row(
+                children: [
+                  Icon(Icons.music_note, color: Colors.white, size: 13),
+                  SizedBox(width: 4),
+                  Text(
+                    'Musique béninoise originale',
+                    style: TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // ── Actions droite ────────────────────────────────────────────────
+        Positioned(
+          right: 10,
+          bottom: bottomPadding + 75,
+          child: Column(
+            children: [
+              _ActionButton(
+                icon: _isLiked ? Icons.favorite : Icons.favorite_border,
+                color: _isLiked ? Colors.red : Colors.white,
+                label: _formatCount(_likes),
+                onTap: _toggleLike,
+              ),
+              const SizedBox(height: 18),
+              _ActionButton(
+                icon: Icons.comment_outlined,
+                label: _formatCount(widget.video.comments),
+                onTap: () => _showComments(context),
+              ),
+              const SizedBox(height: 18),
+              _ActionButton(
+                icon: Icons.share_outlined,
+                label: 'Partager',
+                onTap: _share,
+              ),
+              const SizedBox(height: 18),
+              _ActionButton(
+                icon: Icons.monetization_on_outlined,
+                label: 'Soutenir',
+                color: AppColors.accent,
+                onTap: _subscribe,
+              ),
+              const SizedBox(height: 18),
+              _RotatingDisk(
+                creatorName: widget.video.creatorName,
+                isPlaying: _isInitialized && _controller.value.isPlaying,
+              ),
+            ],
+          ),
+        ),
+
+        // ── Barre progression ─────────────────────────────────────────────
+        if (_isInitialized)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: VideoProgressIndicator(
+              _controller,
+              allowScrubbing: true,
+              colors: const VideoProgressColors(
+                playedColor: AppColors.primary,
+                bufferedColor: Colors.white30,
+                backgroundColor: Colors.white12,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) { return '${(count / 1000000).toStringAsFixed(1)}M'; }
+    if (count >= 1000) { return '${(count / 1000).toStringAsFixed(1)}K'; }
+    return count.toString();
+  }
+
+  void _showComments(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (_, ctrl) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${_formatCount(widget.video.comments)} commentaires',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            const Divider(color: Colors.white12),
+            Expanded(
+              child: ListView.builder(
+                controller: ctrl,
+                itemCount: 10,
+                itemBuilder: (_, i) => ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary,
+                    radius: 16,
+                    child: Text(
+                      'U${i + 1}',
+                      style: const TextStyle(fontSize: 10, color: Colors.black),
+                    ),
+                  ),
+                  title: Text(
+                    'Utilisateur ${i + 1}',
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                  subtitle: Text(
+                    ['Super vidéo 🔥', 'Trop bien !', 'Béninois 🇧🇯', 'Continue !', 'Magnifique 👏'][i % 5],
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: 12,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+                ),
+                child: const TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Ajouter un commentaire...',
+                    hintStyle: TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.white12,
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.all(Radius.circular(24)),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    suffixIcon: Icon(Icons.send, color: AppColors.primary),
+                  ),
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Widgets ───────────────────────────────────────────────────────────────────
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    this.color = Colors.white,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 30),
+          const SizedBox(height: 3),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShareOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ShareOption({
+    required this.icon,
+    required this.label,
+    this.color = Colors.white,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _TabButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white54,
+              fontSize: 16,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          const SizedBox(height: 2),
+          if (isSelected) Container(width: 20, height: 2, color: Colors.white),
+        ],
+      ),
+    );
+  }
+}
+
+class _RotatingDisk extends StatefulWidget {
+  final String creatorName;
+  final bool isPlaying;
+  const _RotatingDisk({required this.creatorName, required this.isPlaying});
+
+  @override
+  State<_RotatingDisk> createState() => _RotatingDiskState();
+}
+
+class _RotatingDiskState extends State<_RotatingDisk>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    if (widget.isPlaying) { _ctrl.repeat(); }
+  }
+
+  @override
+  void didUpdateWidget(_RotatingDisk old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlaying && !old.isPlaying) {
+      _ctrl.repeat();
+    } else if (!widget.isPlaying && old.isPlaying) {
+      _ctrl.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _ctrl,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          color: AppColors.primary,
+        ),
+        child: ClipOval(
+          child: Center(
+            child: Text(
+              widget.creatorName[0],
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
