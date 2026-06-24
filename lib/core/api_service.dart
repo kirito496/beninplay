@@ -52,6 +52,13 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  static Future<List<Map<String, dynamic>>> getMyVideos() async {
+    final res = await http.get(Uri.parse('${AppConfig.api}/api/videos/mine'), headers: await _headers(auth: true));
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
   static Future<Map<String, dynamic>> uploadVideo({required String filePath, required String title, String? description, String zone = 'normal', List<String> tags = const []}) async {
     try {
       final bytes = await File(filePath).readAsBytes();
@@ -74,6 +81,20 @@ class ApiService {
 
   static Future<Map<String, dynamic>> addComment(String id, String content) async {
     final res = await http.post(Uri.parse('${AppConfig.api}/api/videos/$id/comment'), headers: await _headers(auth: true), body: jsonEncode({'content': content}));
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> initiatePayment({required int amount, required String type, required String operator, String? videoId}) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/payments/initiate'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'amount': amount, 'type': type, 'operator': operator, if (videoId != null) 'videoId': videoId}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> checkPaymentStatus(String paymentId) async {
+    final res = await http.get(Uri.parse('${AppConfig.api}/api/payments/status/$paymentId'), headers: await _headers(auth: true));
     return jsonDecode(res.body);
   }
 
