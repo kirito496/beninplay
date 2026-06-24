@@ -59,19 +59,54 @@ class ApiService {
     return list.whereType<Map<String, dynamic>>().toList();
   }
 
-  static Future<Map<String, dynamic>> uploadVideo({required String filePath, required String title, String? description, String zone = 'normal', List<String> tags = const []}) async {
+  static Future<Map<String, dynamic>> uploadVideo({
+    required String filePath,
+    required String title,
+    String? description,
+    String zone = 'normal',
+    List<String> tags = const [],
+    void Function(String)? onStatus,
+    void Function(int)? onProgress,
+  }) async {
     try {
+      onStatus?.call('Lecture du fichier...');
       final bytes = await File(filePath).readAsBytes();
       final ext = filePath.split('.').last.toLowerCase();
       final mime = ext == 'mp4' ? 'video/mp4' : ext == 'mov' ? 'video/quicktime' : 'video/mp4';
       final userId = await getCurrentUserId() ?? 'unknown';
       final fileName = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      onStatus?.call('Upload en cours...');
+      onProgress?.call(0);
+
       final sb = Supabase.instance.client;
-      await sb.storage.from(AppConfig.storageBucket).uploadBinary(fileName, bytes, fileOptions: FileOptions(contentType: mime, upsert: false));
+      await sb.storage.from(AppConfig.storageBucket).uploadBinary(
+        fileName, bytes,
+        fileOptions: FileOptions(contentType: mime, upsert: false),
+      );
+
+      onProgress?.call(80);
+      onStatus?.call('Enregistrement...');
+
       final url = sb.storage.from(AppConfig.storageBucket).getPublicUrl(fileName);
-      final res = await http.post(Uri.parse('${AppConfig.api}/api/videos/register'), headers: await _headers(auth: true), body: jsonEncode({'title': title, 'video_url': url, 'description': description ?? '', 'zone': zone, 'tags': tags}));
-      return jsonDecode(res.body);
-    } catch (e) { return {'success': false, 'message': e.toString()}; }
+      final token = await getToken();
+      if (token == null) return {'success': false, 'message': 'Non connecté'};
+
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/videos/register'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'title': title, 'video_url': url, 'description': description ?? '', 'zone': zone, 'tags': tags}),
+      );
+
+      onProgress?.call(100);
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode != 200 && res.statusCode != 201) {
+        return {'success': false, 'message': data['message'] ?? 'Erreur serveur ${res.statusCode}'};
+      }
+      return data;
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
   }
 
   static Future<Map<String, dynamic>> likeVideo(String id) async {
