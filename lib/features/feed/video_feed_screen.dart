@@ -1,3 +1,5 @@
+import 'package:beninplay/core/api_service.dart';
+import 'package:beninplay/features/boost/boost_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/constants/app_colors.dart';
@@ -6,7 +8,11 @@ import '../../shared/models/video_model.dart';
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
   final int startIndex;
-  const VideoFeedScreen({super.key, this.isDark = false, this.startIndex = 0});
+  final bool isTabActive;
+  final int refreshKey;
+  final VoidCallback? onOpenLive;
+  final VoidCallback? onOpenMessages;
+  const VideoFeedScreen({super.key, this.isDark = false, this.startIndex = 0, this.isTabActive = true, this.refreshKey = 0, this.onOpenLive, this.onOpenMessages});
 
   @override
   State<VideoFeedScreen> createState() => _VideoFeedScreenState();
@@ -15,17 +21,46 @@ class VideoFeedScreen extends StatefulWidget {
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   late final PageController _pageController;
   int _currentIndex = 0;
-  late List<VideoModel> _videos;
+  List<VideoModel> _videos = [];
+  bool _showAbonnements = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _videos = widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal;
-    _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
+    _currentIndex = widget.startIndex;
     _pageController = PageController(initialPage: _currentIndex);
+    _loadVideos();
   }
 
   @override
+  void didUpdateWidget(VideoFeedScreen old) {
+    super.didUpdateWidget(old);
+    if (widget.refreshKey != old.refreshKey) _loadVideos();
+    if (widget.isTabActive != old.isTabActive) setState(() {});
+  }
+
+  Future<void> _loadVideos() async {
+    try {
+      final res = await ApiService.getVideos();
+      final List raw = res['videos'] as List? ?? [];
+      final loaded = raw.map((v) => VideoModel.fromJson(v as Map<String, dynamic>)).toList();
+      setState(() {
+        _videos = loaded.isEmpty
+            ? (widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal)
+            : loaded;
+        _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
+        _isLoading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _videos = widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal;
+        _isLoading = false;
+      });
+    }
+  }
+
+    @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
@@ -39,29 +74,33 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leadingWidth: 80,
+        leading: widget.onOpenLive != null ? GestureDetector(onTap: widget.onOpenLive, child: Container(margin: const EdgeInsets.only(left: 12, top: 8, bottom: 8), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.withValues(alpha: 0.6))), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.live_tv, color: Colors.red, size: 14), SizedBox(width: 3), Text('LIVE', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 11))]))) : null,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _TabButton(label: 'Pour toi', isSelected: true, onTap: () {}),
-            const SizedBox(width: 20),
-            _TabButton(label: 'Abonnements', isSelected: false, onTap: () {}),
+            _TabButton(label: 'Pour toi', isSelected: !_showAbonnements, onTap: () => setState(() => _showAbonnements = false)),
+            const SizedBox(width: 12),
+            _TabButton(label: 'Abonnements', isSelected: _showAbonnements, onTap: () => setState(() => _showAbonnements = true)),
           ],
         ),
         actions: [
+          if (widget.onOpenMessages != null) IconButton(icon: const Icon(Icons.send_outlined, color: Colors.white, size: 22), onPressed: widget.onOpenMessages),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 26),
             onPressed: () => _showSearch(context),
           ),
         ],
       ),
-      body: PageView.builder(
+      body: _isLoading ? const Center(child: CircularProgressIndicator(color: Colors.white)) : PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: _videos.length,
         onPageChanged: (i) => setState(() => _currentIndex = i),
         itemBuilder: (context, index) => _VideoPage(
           video: _videos[index],
-          isActive: index == _currentIndex,
+          isActive: index == _currentIndex && widget.isTabActive,
+          isPreload: index == _currentIndex + 1,
         ),
       ),
     );
@@ -80,7 +119,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 }
 
-// ── Recherche ─────────────────────────────────────────────────────────────────
+// -- Recherche -----------------------------------------------------------------
 
 class _SearchSheet extends StatefulWidget {
   const _SearchSheet();
@@ -93,7 +132,7 @@ class _SearchSheetState extends State<_SearchSheet> {
   final _controller = TextEditingController();
   List<String> _results = [];
   final List<String> _trending = [
-    '#DanceBénin', '#CuisineBéninoise', '#HumourBénin',
+    '#DanceB�nin', '#CuisineB�ninoise', '#HumourB�nin',
     '#BeninPlay', '#CotoviVibes', '#VodounVibes',
   ];
 
@@ -104,8 +143,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
     setState(() {
       _results = [
-        'Vidéo : $query au Bénin',
-        'Créateur : @${query.toLowerCase()}',
+        'Vid�o : $query au B�nin',
+        'Cr�ateur : @${query.toLowerCase()}',
         '#${query.replaceAll(' ', '')}',
         'Son : $query remix',
       ];
@@ -141,7 +180,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                 style: const TextStyle(color: Colors.white),
                 onChanged: _search,
                 decoration: InputDecoration(
-                  hintText: 'Rechercher vidéos, créateurs, #hashtags...',
+                  hintText: 'Rechercher vid�os, cr�ateurs, #hashtags...',
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
                   prefixIcon: const Icon(Icons.search, color: Colors.white38),
                   suffixIcon: _controller.text.isNotEmpty
@@ -171,11 +210,11 @@ class _SearchSheetState extends State<_SearchSheet> {
                 children: [
                   if (_results.isEmpty) ...[
                     const Text(
-                      '🔥 Tendances',
+                      '?? Tendances',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -209,7 +248,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
                         r.startsWith('#') ? Icons.tag
-                            : r.startsWith('Créateur') ? Icons.person
+                            : r.startsWith('Cr�ateur') ? Icons.person
                             : r.startsWith('Son') ? Icons.music_note
                             : Icons.play_circle_outline,
                         color: Colors.white54,
@@ -227,12 +266,13 @@ class _SearchSheetState extends State<_SearchSheet> {
   }
 }
 
-// ── Page vidéo ────────────────────────────────────────────────────────────────
+// -- Page vid�o ----------------------------------------------------------------
 
 class _VideoPage extends StatefulWidget {
   final VideoModel video;
   final bool isActive;
-  const _VideoPage({required this.video, required this.isActive});
+  final bool isPreload;
+  const _VideoPage({required this.video, required this.isActive, this.isPreload = false});
 
   @override
   State<_VideoPage> createState() => _VideoPageState();
@@ -247,13 +287,15 @@ class _VideoPageState extends State<_VideoPage> {
   bool _showPauseIcon = false;
   bool _isBuffering = false;
   bool _showDescription = false;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _likes = widget.video.likes;
+    ApiService.getCurrentUserId().then((id) { if (mounted) setState(() => _currentUserId = id); });
     _isLiked = widget.video.isLiked;
-    _initVideo();
+    if (widget.isActive || widget.isPreload) _initVideo();
   }
 
   Future<void> _initVideo() async {
@@ -279,10 +321,14 @@ class _VideoPageState extends State<_VideoPage> {
   @override
   void didUpdateWidget(_VideoPage old) {
     super.didUpdateWidget(old);
-    if (widget.isActive && !old.isActive) {
-      _controller.play();
-    } else if (!widget.isActive && old.isActive) {
-      _controller.pause();
+    if (!_isInitialized && (widget.isActive || widget.isPreload)) {
+      _initVideo();
+    } else if (_isInitialized) {
+      if (widget.isActive && !old.isActive) {
+        _controller.play();
+      } else if (!widget.isActive && old.isActive) {
+        _controller.pause();
+      }
     }
   }
 
@@ -318,7 +364,7 @@ class _VideoPageState extends State<_VideoPage> {
         content: Text(
           _isFollowing
               ? 'Vous suivez @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}'
-              : 'Vous ne suivez plus ce créateur',
+              : 'Vous ne suivez plus ce cr�ateur',
         ),
         backgroundColor: _isFollowing ? AppColors.primary : Colors.grey,
         duration: const Duration(seconds: 2),
@@ -349,7 +395,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Partager la vidéo',
+              'Partager la vid�o',
               style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
@@ -363,7 +409,7 @@ class _VideoPageState extends State<_VideoPage> {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Lien copié !'),
+                        content: Text('Lien copi� !'),
                         backgroundColor: AppColors.primary,
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -391,6 +437,18 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 8),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openBoost() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BoostScreen(
+          videoId: widget.video.id,
+          videoTitle: widget.video.title,
         ),
       ),
     );
@@ -440,7 +498,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Soutenez ce créateur',
+              'Soutenez ce cr�ateur',
               style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -460,7 +518,7 @@ class _VideoPageState extends State<_VideoPage> {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Tip de $amount FCFA envoyé à ${widget.video.creatorName} ❤️'),
+                          content: Text('Tip de $amount FCFA envoy� � ${widget.video.creatorName} ??'),
                           backgroundColor: AppColors.primary,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -487,7 +545,7 @@ class _VideoPageState extends State<_VideoPage> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('S\'abonner au créateur — 2 000 FCFA/mois'),
+              child: const Text('S\'abonner au cr�ateur � 2 000 FCFA/mois'),
             ),
           ],
         ),
@@ -502,7 +560,7 @@ class _VideoPageState extends State<_VideoPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // ── Vidéo ────────────────────────────────────────────────────────
+        // -- Vid�o --------------------------------------------------------
         GestureDetector(
           onTap: _togglePlayPause,
           child: Container(
@@ -516,13 +574,11 @@ class _VideoPageState extends State<_VideoPage> {
                 child: VideoPlayer(_controller),
               ),
             )
-                : const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
+                : Stack(fit: StackFit.expand, children: [if (widget.video.thumbnailUrl != null) Image.network(widget.video.thumbnailUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()), const Center(child: CircularProgressIndicator(color: AppColors.primary)),]),
           ),
         ),
 
-        // ── Icône pause/play ─────────────────────────────────────────────
+        // -- Ic�ne pause/play ---------------------------------------------
         if (_showPauseIcon)
           Center(
             child: Container(
@@ -539,7 +595,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
           ),
 
-        // ── Buffering ────────────────────────────────────────────────────
+        // -- Buffering ----------------------------------------------------
         if (_isBuffering && _isInitialized)
           const Center(
             child: SizedBox(
@@ -549,7 +605,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
           ),
 
-        // ── Gradient bas ─────────────────────────────────────────────────
+        // -- Gradient bas -------------------------------------------------
         const Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(
@@ -565,11 +621,11 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // ── Infos créateur + description (BAS GAUCHE) ────────────────────
+        // -- Infos cr�ateur + description (BAS GAUCHE) --------------------
         Positioned(
           left: 16,
           right: 80,
-          bottom: bottomPadding + 70,
+          bottom: bottomPadding + 12,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -617,7 +673,7 @@ class _VideoPageState extends State<_VideoPage> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        _isFollowing ? 'Abonné ✓' : 'Suivre',
+                        _isFollowing ? 'Abonn� ?' : 'Suivre',
                         style: TextStyle(
                           color: _isFollowing ? Colors.white70 : Colors.white,
                           fontSize: 12,
@@ -661,7 +717,7 @@ class _VideoPageState extends State<_VideoPage> {
                   Icon(Icons.music_note, color: Colors.white, size: 13),
                   SizedBox(width: 4),
                   Text(
-                    'Musique béninoise originale',
+                    'Musique b�ninoise originale',
                     style: TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ],
@@ -670,10 +726,10 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // ── Actions droite ────────────────────────────────────────────────
+        // -- Actions droite ------------------------------------------------
         Positioned(
           right: 10,
-          bottom: bottomPadding + 75,
+          bottom: bottomPadding + 16,
           child: Column(
             children: [
               _ActionButton(
@@ -696,10 +752,10 @@ class _VideoPageState extends State<_VideoPage> {
               ),
               const SizedBox(height: 18),
               _ActionButton(
-                icon: Icons.monetization_on_outlined,
-                label: 'Soutenir',
+                icon: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? Icons.rocket_launch_outlined : Icons.monetization_on_outlined,
+                label: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? 'Booster' : 'Soutenir',
                 color: AppColors.accent,
-                onTap: _subscribe,
+                onTap: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? _openBoost : _subscribe,
               ),
               const SizedBox(height: 18),
               _RotatingDisk(
@@ -710,7 +766,7 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // ── Barre progression ─────────────────────────────────────────────
+        // -- Barre progression ---------------------------------------------
         if (_isInitialized)
           Positioned(
             bottom: 0,
@@ -783,7 +839,7 @@ class _VideoPageState extends State<_VideoPage> {
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                   ),
                   subtitle: Text(
-                    ['Super vidéo 🔥', 'Trop bien !', 'Béninois 🇧🇯', 'Continue !', 'Magnifique 👏'][i % 5],
+                    ['Super vid�o ??', 'Trop bien !', 'B�ninois ????', 'Continue !', 'Magnifique ??'][i % 5],
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ),
@@ -820,7 +876,7 @@ class _VideoPageState extends State<_VideoPage> {
   }
 }
 
-// ── Widgets ───────────────────────────────────────────────────────────────────
+// -- Widgets -------------------------------------------------------------------
 
 class _ActionButton extends StatelessWidget {
   final IconData icon;
@@ -909,7 +965,7 @@ class _TabButton extends StatelessWidget {
             label,
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.white54,
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -988,3 +1044,7 @@ class _RotatingDiskState extends State<_RotatingDisk>
     );
   }
 }
+
+
+
+

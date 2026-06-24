@@ -1,5 +1,7 @@
+import 'package:beninplay/core/api_service.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../core/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
@@ -20,9 +22,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  int _feedRefreshKey = 0;
 
-  late final List<Widget> _screens = [
-    const VideoFeedScreen(isDark: false),
+  List<Widget> get _screens => [
+    VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenMessages: _openMessages),
     const DiscoverScreen(),
     const SizedBox(),
     const WalletScreen(),
@@ -373,37 +376,39 @@ class _HomeScreenState extends State<HomeScreen> {
                       return;
                     }
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Row(
-                          children: [
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text('"${titleCtrl.text}" en cours de publication...'),
-                            ),
-                          ],
-                        ),
-                        backgroundColor: AppColors.primary,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                    Future.delayed(const Duration(seconds: 3), () {
-                      if (mounted) {
+                    ApiService.uploadVideo(
+                      filePath: videoFile.path,
+                      title: titleCtrl.text.trim(),
+                      description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                      zone: selectedZone,
+                      tags: tags,
+                    ).then((res) {
+                      if (!mounted) return null;
+                      if (res['success'] == true) {
+                        setState(() { _feedRefreshKey++; _currentIndex = 0; });
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text(
-                              'Vidéo publiée avec succès ! ✓\n(Disponible après connexion au serveur)',
-                            ),
+                            content: Text('Video publiee avec succes ! Elle apparait dans le fil. ✓'),
                             backgroundColor: AppColors.success,
                             duration: Duration(seconds: 4),
                           ),
                         );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res['error']?.toString() ?? 'Erreur lors de la publication'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
                       }
+                    }).catchError((e) {
+                      if (!mounted) return null;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur reseau : $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
                     });
                   },
                   style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
@@ -427,53 +432,6 @@ class _HomeScreenState extends State<HomeScreen> {
             index: _currentIndex,
             children: _screens,
           ),
-          // Boutons Messages + Live en haut à droite (visible sur l'onglet Accueil)
-          if (_currentIndex == 0)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              right: 12,
-              child: Row(
-                children: [
-                  // Live
-                  GestureDetector(
-                    onTap: _openLives,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.6)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.live_tv, color: Colors.red, size: 16),
-                          SizedBox(width: 4),
-                          Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Messages
-                  GestureDetector(
-                    onTap: _openMessages,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                      child: const Icon(Icons.send_outlined, color: Colors.white, size: 20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
       bottomNavigationBar: Container(
@@ -596,3 +554,4 @@ class _UploadOption extends StatelessWidget {
     );
   }
 }
+
