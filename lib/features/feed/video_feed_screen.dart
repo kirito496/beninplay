@@ -47,6 +47,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _hasMore = true;
   int _lastRefreshKey = 0;
 
+  // Cache des contrôleurs : seulement current + next pour économiser la bande passante
+  final Map<int, VideoPlayerController> _controllers = {};
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +63,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     super.didUpdateWidget(old);
     if (widget.refreshKey != _lastRefreshKey) {
       _lastRefreshKey = widget.refreshKey;
+      _disposeAllControllers();
       setState(() {
         _videos = [];
         _page = 1;
@@ -68,6 +72,68 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       });
       _loadVideos();
     }
+    // Pause/resume selon tab active
+    if (widget.isTabActive != old.isTabActive) {
+      final ctrl = _controllers[_currentIndex];
+      if (ctrl != null && ctrl.value.isInitialized) {
+        widget.isTabActive ? ctrl.play() : ctrl.pause();
+      }
+    }
+  }
+
+  void _disposeAllControllers() {
+    for (final ctrl in _controllers.values) {
+      ctrl.dispose();
+    }
+    _controllers.clear();
+  }
+
+  // Initialise le contrôleur pour un index donné
+  Future<void> _initController(int index) async {
+    if (_controllers.containsKey(index)) return;
+    if (index < 0 || index >= _videos.length) return;
+    final video = _videos[index];
+    final ctrl = VideoPlayerController.networkUrl(
+      Uri.parse(video.videoUrl),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+    );
+    _controllers[index] = ctrl;
+    await ctrl.initialize();
+    ctrl.setLooping(true);
+    if (index == _currentIndex && widget.isTabActive) {
+      ctrl.play();
+    }
+    if (mounted) setState(() {});
+  }
+
+  // Nettoie les contrôleurs trop loin de l'index actuel (économise la RAM et le réseau)
+  void _cleanupControllers(int currentIdx) {
+    final toRemove = _controllers.keys
+        .where((i) => (i - currentIdx).abs() > 1)
+        .toList();
+    for (final i in toRemove) {
+      _controllers[i]?.dispose();
+      _controllers.remove(i);
+    }
+  }
+
+  void _onPageChanged(int index) {
+    // Pause ancienne vidéo
+    _controllers[_currentIndex]?.pause();
+
+    setState(() => _currentIndex = index);
+
+    // Joue la nouvelle
+    _controllers[index]?.play();
+
+    // Précharge la suivante
+    _initController(index + 1);
+
+    // Nettoie les anciennes
+    _cleanupControllers(index);
+
+    // Charge plus de vidéos si proche de la fin
+    if (index >= _videos.length - 3) _loadVideos();
   }
 
   Future<void> _loadVideos() async {
@@ -92,17 +158,22 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
         }
       });
+      // Initialise la première vidéo + précharge la suivante
+      await _initController(_currentIndex);
+      await _initController(_currentIndex + 1);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         if (_videos.isEmpty) _videos = [_fallbackVideo];
       });
+      await _initController(0);
     }
   }
 
   @override
   void dispose() {
+    _disposeAllControllers();
     _pageController.dispose();
     super.dispose();
   }
@@ -149,12 +220,10 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: _videos.length,
-        onPageChanged: (i) {
-          setState(() => _currentIndex = i);
-          if (i >= _videos.length - 3) _loadVideos();
-        },
+        onPageChanged: _onPageChanged,
         itemBuilder: (context, index) => _VideoPage(
           video: _videos[index],
+          controller: _controllers[index],
           isActive: index == _currentIndex && widget.isTabActive,
         ),
       ),
@@ -325,16 +394,15 @@ class _SearchSheetState extends State<_SearchSheet> {
 
 class _VideoPage extends StatefulWidget {
   final VideoModel video;
+  final VideoPlayerController? controller;
   final bool isActive;
-  const _VideoPage({required this.video, required this.isActive});
+  const _VideoPage({required this.video, required this.isActive, this.controller});
 
   @override
   State<_VideoPage> createState() => _VideoPageState();
 }
 
 class _VideoPageState extends State<_VideoPage> {
-  late VideoPlayerController _controller;
-  bool _isInitialized = false;
   bool _isLiked = false;
   bool _isFollowing = false;
   int _likes = 0;
@@ -342,56 +410,48 @@ class _VideoPageState extends State<_VideoPage> {
   bool _isBuffering = false;
   bool _showDescription = false;
 
+  VideoPlayerController? get _ctrl => widget.controller;
+  bool get _isInitialized => _ctrl?.value.isInitialized ?? false;
+
   @override
   void initState() {
     super.initState();
     _likes = widget.video.likes;
     _isLiked = widget.video.isLiked;
-    _initVideo();
+    _ctrl?.addListener(_onControllerUpdate);
   }
 
-  Future<void> _initVideo() async {
-    _controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.video.videoUrl),
-      videoPlayerOptions: VideoPlayerOptions(
-        mixWithOthers: false,
-        allowBackgroundPlayback: false,
-      ),
-    );
-    _controller.addListener(() {
-      if (!mounted) return;
-      if (_controller.value.isBuffering != _isBuffering) {
-        setState(() => _isBuffering = _controller.value.isBuffering);
-      }
-    });
-    await _controller.initialize();
-    _controller.setLooping(true);
-    if (widget.isActive) { _controller.play(); }
-    if (mounted) { setState(() => _isInitialized = true); }
+  void _onControllerUpdate() {
+    if (!mounted) return;
+    final buffering = _ctrl?.value.isBuffering ?? false;
+    if (buffering != _isBuffering) {
+      setState(() => _isBuffering = buffering);
+    }
   }
 
   @override
   void didUpdateWidget(_VideoPage old) {
     super.didUpdateWidget(old);
-    if (widget.isActive && !old.isActive) {
-      _controller.play();
-    } else if (!widget.isActive && old.isActive) {
-      _controller.pause();
+    if (widget.controller != old.controller) {
+      old.controller?.removeListener(_onControllerUpdate);
+      _ctrl?.addListener(_onControllerUpdate);
     }
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ctrl?.removeListener(_onControllerUpdate);
     super.dispose();
   }
 
   void _togglePlayPause() {
+    if (_ctrl == null || !_isInitialized) return;
     setState(() {
-      if (_controller.value.isPlaying) {
-        _controller.pause();
+      if (_ctrl!.value.isPlaying) {
+        _ctrl!.pause();
       } else {
-        _controller.play();
+        _ctrl!.play();
       }
       _showPauseIcon = true;
     });
@@ -615,13 +675,13 @@ class _VideoPageState extends State<_VideoPage> {
           onTap: _togglePlayPause,
           child: Container(
             color: Colors.black,
-            child: _isInitialized
+            child: _isInitialized && _ctrl != null
                 ? FittedBox(
               fit: BoxFit.cover,
               child: SizedBox(
-                width: _controller.value.size.width,
-                height: _controller.value.size.height,
-                child: VideoPlayer(_controller),
+                width: _ctrl!.value.size.width,
+                height: _ctrl!.value.size.height,
+                child: VideoPlayer(_ctrl!),
               ),
             )
                 : const Center(
@@ -631,7 +691,7 @@ class _VideoPageState extends State<_VideoPage> {
         ),
 
         // ── Icône pause/play ─────────────────────────────────────────────
-        if (_showPauseIcon)
+        if (_showPauseIcon && _ctrl != null)
           Center(
             child: Container(
               padding: const EdgeInsets.all(18),
@@ -640,7 +700,7 @@ class _VideoPageState extends State<_VideoPage> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                _controller.value.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                _ctrl!.value.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
                 color: Colors.white,
                 size: 52,
               ),
@@ -812,7 +872,7 @@ class _VideoPageState extends State<_VideoPage> {
               const SizedBox(height: 18),
               _RotatingDisk(
                 creatorName: widget.video.creatorName,
-                isPlaying: _isInitialized && _controller.value.isPlaying,
+                isPlaying: _isInitialized && (_ctrl?.value.isPlaying ?? false),
               ),
             ],
           ),
@@ -825,7 +885,7 @@ class _VideoPageState extends State<_VideoPage> {
             left: 0,
             right: 0,
             child: VideoProgressIndicator(
-              _controller,
+              _ctrl!,
               allowScrubbing: true,
               colors: const VideoProgressColors(
                 playedColor: AppColors.primary,
