@@ -1,7 +1,6 @@
-import 'package:beninplay/core/api_service.dart';
-import 'package:beninplay/features/boost/boost_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
 
@@ -12,55 +11,97 @@ class VideoFeedScreen extends StatefulWidget {
   final int refreshKey;
   final VoidCallback? onOpenLive;
   final VoidCallback? onOpenMessages;
-  const VideoFeedScreen({super.key, this.isDark = false, this.startIndex = 0, this.isTabActive = true, this.refreshKey = 0, this.onOpenLive, this.onOpenMessages});
+
+  const VideoFeedScreen({
+    super.key,
+    this.isDark = false,
+    this.startIndex = 0,
+    this.isTabActive = true,
+    this.refreshKey = 0,
+    this.onOpenLive,
+    this.onOpenMessages,
+  });
 
   @override
   State<VideoFeedScreen> createState() => _VideoFeedScreenState();
 }
 
+const _beeVideoUrl = 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4';
+final _fallbackVideo = VideoModel(
+  id: 'bee_fallback',
+  creatorId: 'beninplay',
+  creatorName: 'BeninPlay',
+  title: 'Bienvenue sur BeninPlay ! 🇧🇯',
+  description: 'Publie ta première vidéo et rejoins la communauté béninoise.',
+  videoUrl: _beeVideoUrl,
+  zone: VideoZone.normal,
+  createdAt: DateTime(2024),
+);
+
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   late final PageController _pageController;
   int _currentIndex = 0;
   List<VideoModel> _videos = [];
-  bool _showAbonnements = false;
   bool _isLoading = true;
+  int _page = 1;
+  bool _hasMore = true;
+  int _lastRefreshKey = 0;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.startIndex;
-    _pageController = PageController(initialPage: _currentIndex);
+    _lastRefreshKey = widget.refreshKey;
+    _pageController = PageController();
     _loadVideos();
   }
 
   @override
   void didUpdateWidget(VideoFeedScreen old) {
     super.didUpdateWidget(old);
-    if (widget.refreshKey != old.refreshKey) _loadVideos();
-    if (widget.isTabActive != old.isTabActive) setState(() {});
+    if (widget.refreshKey != _lastRefreshKey) {
+      _lastRefreshKey = widget.refreshKey;
+      setState(() {
+        _videos = [];
+        _page = 1;
+        _hasMore = true;
+        _isLoading = true;
+      });
+      _loadVideos();
+    }
   }
 
   Future<void> _loadVideos() async {
+    if (!_hasMore) return;
     try {
-      final res = await ApiService.getVideos();
-      final List raw = res['videos'] as List? ?? [];
-      final loaded = raw.map((v) => VideoModel.fromJson(v as Map<String, dynamic>)).toList();
+      final data = await ApiService.getVideos(page: _page);
+      if (!mounted) return;
+      final List<dynamic> raw = data['videos'] ?? data['data'] ?? [];
+      final fetched = raw
+          .whereType<Map<String, dynamic>>()
+          .where((v) => (v['video_url'] ?? '').toString().isNotEmpty)
+          .map((v) => VideoModel.fromJson(v))
+          .toList();
       setState(() {
-        _videos = loaded.isEmpty
-            ? (widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal)
-            : loaded;
-        _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
+        _videos.removeWhere((v) => v.id == 'bee_fallback');
+        _videos.addAll(fetched);
+        _videos.add(_fallbackVideo);
+        if (fetched.length < 20) _hasMore = false;
+        _page++;
         _isLoading = false;
+        if (_videos.isNotEmpty) {
+          _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
+        }
       });
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _videos = widget.isDark ? VideoModel.mockDark : VideoModel.mockNormal;
         _isLoading = false;
+        if (_videos.isEmpty) _videos = [_fallbackVideo];
       });
     }
   }
 
-    @override
+  @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
@@ -74,33 +115,47 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leadingWidth: 80,
-        leading: widget.onOpenLive != null ? GestureDetector(onTap: widget.onOpenLive, child: Container(margin: const EdgeInsets.only(left: 12, top: 8, bottom: 8), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.withValues(alpha: 0.6))), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.live_tv, color: Colors.red, size: 14), SizedBox(width: 3), Text('LIVE', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 11))]))) : null,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _TabButton(label: 'Pour toi', isSelected: !_showAbonnements, onTap: () => setState(() => _showAbonnements = false)),
-            const SizedBox(width: 12),
-            _TabButton(label: 'Abonnements', isSelected: _showAbonnements, onTap: () => setState(() => _showAbonnements = true)),
+            _TabButton(label: 'Pour toi', isSelected: true, onTap: () {}),
+            const SizedBox(width: 20),
+            _TabButton(label: 'Abonnements', isSelected: false, onTap: () {}),
           ],
         ),
         actions: [
-          if (widget.onOpenMessages != null) IconButton(icon: const Icon(Icons.send_outlined, color: Colors.white, size: 22), onPressed: widget.onOpenMessages),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 26),
             onPressed: () => _showSearch(context),
           ),
         ],
       ),
-      body: _isLoading ? const Center(child: CircularProgressIndicator(color: Colors.white)) : PageView.builder(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          : _videos.isEmpty
+          ? const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.video_library_outlined, color: Colors.white30, size: 64),
+            SizedBox(height: 16),
+            Text('Aucune vidéo pour le moment', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            SizedBox(height: 8),
+            Text('Publie la première !', style: TextStyle(color: Colors.white30, fontSize: 13)),
+          ],
+        ),
+      )
+          : PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: _videos.length,
-        onPageChanged: (i) => setState(() => _currentIndex = i),
+        onPageChanged: (i) {
+          setState(() => _currentIndex = i);
+          if (i >= _videos.length - 3) _loadVideos();
+        },
         itemBuilder: (context, index) => _VideoPage(
           video: _videos[index],
           isActive: index == _currentIndex && widget.isTabActive,
-          isPreload: index == _currentIndex + 1,
         ),
       ),
     );
@@ -119,7 +174,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 }
 
-// -- Recherche -----------------------------------------------------------------
+// ── Recherche ─────────────────────────────────────────────────────────────────
 
 class _SearchSheet extends StatefulWidget {
   const _SearchSheet();
@@ -132,7 +187,7 @@ class _SearchSheetState extends State<_SearchSheet> {
   final _controller = TextEditingController();
   List<String> _results = [];
   final List<String> _trending = [
-    '#DanceB�nin', '#CuisineB�ninoise', '#HumourB�nin',
+    '#DanceBénin', '#CuisineBéninoise', '#HumourBénin',
     '#BeninPlay', '#CotoviVibes', '#VodounVibes',
   ];
 
@@ -143,8 +198,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
     setState(() {
       _results = [
-        'Vid�o : $query au B�nin',
-        'Cr�ateur : @${query.toLowerCase()}',
+        'Vidéo : $query au Bénin',
+        'Créateur : @${query.toLowerCase()}',
         '#${query.replaceAll(' ', '')}',
         'Son : $query remix',
       ];
@@ -180,7 +235,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                 style: const TextStyle(color: Colors.white),
                 onChanged: _search,
                 decoration: InputDecoration(
-                  hintText: 'Rechercher vid�os, cr�ateurs, #hashtags...',
+                  hintText: 'Rechercher vidéos, créateurs, #hashtags...',
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
                   prefixIcon: const Icon(Icons.search, color: Colors.white38),
                   suffixIcon: _controller.text.isNotEmpty
@@ -210,11 +265,11 @@ class _SearchSheetState extends State<_SearchSheet> {
                 children: [
                   if (_results.isEmpty) ...[
                     const Text(
-                      '?? Tendances',
+                      '🔥 Tendances',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 16,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -248,7 +303,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
                         r.startsWith('#') ? Icons.tag
-                            : r.startsWith('Cr�ateur') ? Icons.person
+                            : r.startsWith('Créateur') ? Icons.person
                             : r.startsWith('Son') ? Icons.music_note
                             : Icons.play_circle_outline,
                         color: Colors.white54,
@@ -266,13 +321,12 @@ class _SearchSheetState extends State<_SearchSheet> {
   }
 }
 
-// -- Page vid�o ----------------------------------------------------------------
+// ── Page vidéo ────────────────────────────────────────────────────────────────
 
 class _VideoPage extends StatefulWidget {
   final VideoModel video;
   final bool isActive;
-  final bool isPreload;
-  const _VideoPage({required this.video, required this.isActive, this.isPreload = false});
+  const _VideoPage({required this.video, required this.isActive});
 
   @override
   State<_VideoPage> createState() => _VideoPageState();
@@ -287,15 +341,13 @@ class _VideoPageState extends State<_VideoPage> {
   bool _showPauseIcon = false;
   bool _isBuffering = false;
   bool _showDescription = false;
-  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _likes = widget.video.likes;
-    ApiService.getCurrentUserId().then((id) { if (mounted) setState(() => _currentUserId = id); });
     _isLiked = widget.video.isLiked;
-    if (widget.isActive || widget.isPreload) _initVideo();
+    _initVideo();
   }
 
   Future<void> _initVideo() async {
@@ -321,14 +373,10 @@ class _VideoPageState extends State<_VideoPage> {
   @override
   void didUpdateWidget(_VideoPage old) {
     super.didUpdateWidget(old);
-    if (!_isInitialized && (widget.isActive || widget.isPreload)) {
-      _initVideo();
-    } else if (_isInitialized) {
-      if (widget.isActive && !old.isActive) {
-        _controller.play();
-      } else if (!widget.isActive && old.isActive) {
-        _controller.pause();
-      }
+    if (widget.isActive && !old.isActive) {
+      _controller.play();
+    } else if (!widget.isActive && old.isActive) {
+      _controller.pause();
     }
   }
 
@@ -352,10 +400,24 @@ class _VideoPageState extends State<_VideoPage> {
     });
   }
 
-  void _toggleLike() => setState(() {
-    _isLiked = !_isLiked;
-    _likes += _isLiked ? 1 : -1;
-  });
+  Future<void> _toggleLike() async {
+    if (widget.video.id == 'bee_fallback') return;
+    final wasLiked = _isLiked;
+    setState(() {
+      _isLiked = !_isLiked;
+      _likes += _isLiked ? 1 : -1;
+    });
+    try {
+      await ApiService.likeVideo(widget.video.id);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLiked = wasLiked;
+          _likes += wasLiked ? 1 : -1;
+        });
+      }
+    }
+  }
 
   void _toggleFollow() {
     setState(() => _isFollowing = !_isFollowing);
@@ -364,7 +426,7 @@ class _VideoPageState extends State<_VideoPage> {
         content: Text(
           _isFollowing
               ? 'Vous suivez @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}'
-              : 'Vous ne suivez plus ce cr�ateur',
+              : 'Vous ne suivez plus ce créateur',
         ),
         backgroundColor: _isFollowing ? AppColors.primary : Colors.grey,
         duration: const Duration(seconds: 2),
@@ -395,7 +457,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Partager la vid�o',
+              'Partager la vidéo',
               style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
@@ -409,7 +471,7 @@ class _VideoPageState extends State<_VideoPage> {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Lien copi� !'),
+                        content: Text('Lien copié !'),
                         backgroundColor: AppColors.primary,
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -437,18 +499,6 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 8),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _openBoost() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BoostScreen(
-          videoId: widget.video.id,
-          videoTitle: widget.video.title,
         ),
       ),
     );
@@ -498,7 +548,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Soutenez ce cr�ateur',
+              'Soutenez ce créateur',
               style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
             const SizedBox(height: 24),
@@ -518,7 +568,7 @@ class _VideoPageState extends State<_VideoPage> {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Tip de $amount FCFA envoy� � ${widget.video.creatorName} ??'),
+                          content: Text('Tip de $amount FCFA envoyé à ${widget.video.creatorName} ❤️'),
                           backgroundColor: AppColors.primary,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -545,7 +595,7 @@ class _VideoPageState extends State<_VideoPage> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('S\'abonner au cr�ateur � 2 000 FCFA/mois'),
+              child: const Text('S\'abonner au créateur — 2 000 FCFA/mois'),
             ),
           ],
         ),
@@ -560,7 +610,7 @@ class _VideoPageState extends State<_VideoPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // -- Vid�o --------------------------------------------------------
+        // ── Vidéo ────────────────────────────────────────────────────────
         GestureDetector(
           onTap: _togglePlayPause,
           child: Container(
@@ -574,11 +624,13 @@ class _VideoPageState extends State<_VideoPage> {
                 child: VideoPlayer(_controller),
               ),
             )
-                : Stack(fit: StackFit.expand, children: [if (widget.video.thumbnailUrl != null) Image.network(widget.video.thumbnailUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()), const Center(child: CircularProgressIndicator(color: AppColors.primary)),]),
+                : const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
           ),
         ),
 
-        // -- Ic�ne pause/play ---------------------------------------------
+        // ── Icône pause/play ─────────────────────────────────────────────
         if (_showPauseIcon)
           Center(
             child: Container(
@@ -595,7 +647,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
           ),
 
-        // -- Buffering ----------------------------------------------------
+        // ── Buffering ────────────────────────────────────────────────────
         if (_isBuffering && _isInitialized)
           const Center(
             child: SizedBox(
@@ -605,7 +657,7 @@ class _VideoPageState extends State<_VideoPage> {
             ),
           ),
 
-        // -- Gradient bas -------------------------------------------------
+        // ── Gradient bas ─────────────────────────────────────────────────
         const Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(
@@ -621,11 +673,11 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // -- Infos cr�ateur + description (BAS GAUCHE) --------------------
+        // ── Infos créateur + description (BAS GAUCHE) ────────────────────
         Positioned(
           left: 16,
           right: 80,
-          bottom: bottomPadding + 12,
+          bottom: bottomPadding + 60,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -673,7 +725,7 @@ class _VideoPageState extends State<_VideoPage> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        _isFollowing ? 'Abonn� ?' : 'Suivre',
+                        _isFollowing ? 'Abonné ✓' : 'Suivre',
                         style: TextStyle(
                           color: _isFollowing ? Colors.white70 : Colors.white,
                           fontSize: 12,
@@ -717,7 +769,7 @@ class _VideoPageState extends State<_VideoPage> {
                   Icon(Icons.music_note, color: Colors.white, size: 13),
                   SizedBox(width: 4),
                   Text(
-                    'Musique b�ninoise originale',
+                    'Musique béninoise originale',
                     style: TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ],
@@ -726,10 +778,10 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // -- Actions droite ------------------------------------------------
+        // ── Actions droite ────────────────────────────────────────────────
         Positioned(
           right: 10,
-          bottom: bottomPadding + 16,
+          bottom: bottomPadding + 65,
           child: Column(
             children: [
               _ActionButton(
@@ -752,10 +804,10 @@ class _VideoPageState extends State<_VideoPage> {
               ),
               const SizedBox(height: 18),
               _ActionButton(
-                icon: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? Icons.rocket_launch_outlined : Icons.monetization_on_outlined,
-                label: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? 'Booster' : 'Soutenir',
+                icon: Icons.monetization_on_outlined,
+                label: 'Soutenir',
                 color: AppColors.accent,
-                onTap: (_currentUserId != null && _currentUserId == widget.video.creatorId) ? _openBoost : _subscribe,
+                onTap: _subscribe,
               ),
               const SizedBox(height: 18),
               _RotatingDisk(
@@ -766,7 +818,7 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
-        // -- Barre progression ---------------------------------------------
+        // ── Barre progression ─────────────────────────────────────────────
         if (_isInitialized)
           Positioned(
             bottom: 0,
@@ -800,83 +852,173 @@ class _VideoPageState extends State<_VideoPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        builder: (_, ctrl) => Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${_formatCount(widget.video.comments)} commentaires',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-            const Divider(color: Colors.white12),
-            Expanded(
-              child: ListView.builder(
-                controller: ctrl,
-                itemCount: 10,
-                itemBuilder: (_, i) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary,
-                    radius: 16,
-                    child: Text(
-                      'U${i + 1}',
-                      style: const TextStyle(fontSize: 10, color: Colors.black),
-                    ),
-                  ),
-                  title: Text(
-                    'Utilisateur ${i + 1}',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  subtitle: Text(
-                    ['Super vid�o ??', 'Trop bien !', 'B�ninois ????', 'Continue !', 'Magnifique ??'][i % 5],
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ),
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 12,
-                  right: 12,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-                ),
-                child: const TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Ajouter un commentaire...',
-                    hintStyle: TextStyle(color: Colors.white38),
-                    filled: true,
-                    fillColor: Colors.white12,
-                    border: OutlineInputBorder(
-                      borderSide: BorderSide.none,
-                      borderRadius: BorderRadius.all(Radius.circular(24)),
-                    ),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    suffixIcon: Icon(Icons.send, color: AppColors.primary),
-                  ),
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ),
-          ],
-        ),
+      builder: (_) => _CommentsSheet(
+        videoId: widget.video.id,
+        commentCount: widget.video.comments,
       ),
     );
   }
 }
 
-// -- Widgets -------------------------------------------------------------------
+// ── Commentaires (vrais depuis API) ───────────────────────────────────────────
+
+class _CommentsSheet extends StatefulWidget {
+  final String videoId;
+  final int commentCount;
+  const _CommentsSheet({required this.videoId, required this.commentCount});
+
+  @override
+  State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  List<Map<String, dynamic>> _comments = [];
+  bool _loading = true;
+  final _ctrl = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadComments() async {
+    if (widget.videoId == 'bee_fallback') {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final list = await ApiService.getComments(widget.videoId);
+      if (mounted) setState(() { _comments = list; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    try {
+      await ApiService.addComment(widget.videoId, text);
+      _ctrl.clear();
+      await _loadComments();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de l\'envoi'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
+    return count.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${_formatCount(widget.commentCount)} commentaires',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const Divider(color: Colors.white12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                : _comments.isEmpty
+                ? const Center(
+              child: Text('Aucun commentaire. Sois le premier !',
+                  style: TextStyle(color: Colors.white54)),
+            )
+                : ListView.builder(
+              controller: scrollCtrl,
+              itemCount: _comments.length,
+              itemBuilder: (_, i) {
+                final c = _comments[i];
+                final author = (c['author_name'] ?? c['user_name'] ?? c['phone'] ?? 'Anonyme').toString();
+                final content = (c['content'] ?? '').toString();
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary,
+                    radius: 16,
+                    child: Text(
+                      author.isNotEmpty ? author[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(author, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                  subtitle: Text(content, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                );
+              },
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 12, right: 12,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ctrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Ajouter un commentaire...',
+                        hintStyle: TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: Colors.white12,
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.all(Radius.circular(24)),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _sending
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
+                      : IconButton(
+                    icon: const Icon(Icons.send, color: AppColors.primary),
+                    onPressed: _send,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Widgets ───────────────────────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
   final IconData icon;
@@ -965,7 +1107,7 @@ class _TabButton extends StatelessWidget {
             label,
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.white54,
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -1044,7 +1186,3 @@ class _RotatingDiskState extends State<_RotatingDisk>
     );
   }
 }
-
-
-
-

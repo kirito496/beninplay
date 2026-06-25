@@ -102,8 +102,8 @@ class ApiService {
       final mimeType = ext == 'mp4'
           ? 'video/mp4'
           : ext == 'mov'
-              ? 'video/quicktime'
-              : 'video/mp4';
+          ? 'video/quicktime'
+          : 'video/mp4';
 
       final userId = await getCurrentUserId();
       if (userId == null) {
@@ -199,14 +199,14 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
-  // ── Profil ──────────────────────────────────────────────────────────────────
-
-  static Future<Map<String, dynamic>> getMyProfile() async {
+  static Future<List<Map<String, dynamic>>> getComments(String videoId) async {
     final res = await http.get(
-      Uri.parse('${AppConfig.api}/api/auth/me'),
+      Uri.parse('${AppConfig.api}/api/videos/$videoId/comments'),
       headers: await _headers(auth: true),
     );
-    return jsonDecode(res.body);
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['comments'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
   }
 
   // ── Payments ─────────────────────────────────────────────────────────────────
@@ -233,6 +233,16 @@ class ApiService {
   static Future<Map<String, dynamic>> checkPaymentStatus(String paymentId) async {
     final res = await http.get(
       Uri.parse('${AppConfig.api}/api/payments/status/$paymentId'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  // ── Profil ──────────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getMyProfile() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/auth/me'),
       headers: await _headers(auth: true),
     );
     return jsonDecode(res.body);
