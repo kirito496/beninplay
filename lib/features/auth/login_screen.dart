@@ -1,90 +1,213 @@
 import 'package:flutter/material.dart';
-import 'package:beninplay/core/api_service.dart';
+import 'package:flutter/services.dart';
+import '../../core/api_service.dart';
+import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_strings.dart';
 import 'otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
-  bool _loading = false;
-  String? _error;
+  final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
 
-  Future<void> _sendOtp() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _error = 'Entrez votre numero');
-      return;
-    }
-    setState(() { _loading = true; _error = null; });
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  void _sendOtp() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
     try {
-      final res = await ApiService.sendOtp(phone);
+      final phone = '+229${_phoneController.text.replaceAll(' ', '')}';
+      final result = await ApiService.sendOtp(phone);
       if (!mounted) return;
-      if (res['success'] == true) {
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => OtpScreen(phone: phone),
-        ));
+      setState(() => _isLoading = false);
+      if (result['success'] == true) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => OtpScreen(
+            phone: phone,
+            serverOtp: result['otp']?.toString(),
+          )),
+        );
       } else {
-        setState(() => _error = res['message'] ?? 'Erreur');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Erreur envoi OTP'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
     } catch (e) {
-      setState(() => _error = 'Impossible de contacter le serveur');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e'), backgroundColor: AppColors.error),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.normalBg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('BeninPlay', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              const Text('La plateforme video du Benin', style: TextStyle(color: Colors.grey, fontSize: 14)),
-              const SizedBox(height: 48),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Numero de telephone (ex: 97000000)',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  prefixText: '+229 ',
-                  prefixStyle: const TextStyle(color: Colors.white),
-                  filled: true,
-                  fillColor: Colors.grey[900],
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
-              ],
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _sendOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 60),
+
+                // Logo
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(24),
                   ),
-                  child: _loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Recevoir le code', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Center(
+                    child: Text(
+                      'BP',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 36,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 20),
+
+                const Text(
+                  AppStrings.appName,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  AppStrings.tagline,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+
+                const SizedBox(height: 60),
+
+                // Champ téléphone
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 18),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(8),
+                  ],
+                  decoration: InputDecoration(
+                    labelText: AppStrings.phoneLabel,
+                    hintText: AppStrings.phoneHint,
+                    prefixIcon: Container(
+                      margin: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '+229',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.length < 8) {
+                      return AppStrings.errorPhone;
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // Info SMS
+                Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 14, color: AppColors.textHint),
+                    SizedBox(width: 6),
+                    Text(
+                      'Un code SMS vous sera envoyé',
+                      style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 32),
+
+                // Bouton
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _sendOtp,
+                  child: _isLoading
+                      ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      color: Colors.black,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                      : const Text(AppStrings.sendOtp),
+                ),
+
+                const SizedBox(height: 40),
+
+                // Drapeaux pays
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Text('🇧🇯', style: TextStyle(fontSize: 28)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Fait au Bénin, pour le Bénin',
+                      style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Conditions
+                Text(
+                  'En continuant, vous acceptez nos Conditions d\'utilisation\net notre Politique de confidentialité',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textHint, fontSize: 11),
+                ),
+              ],
+            ),
           ),
         ),
       ),
