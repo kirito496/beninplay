@@ -238,7 +238,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => VideoFeedScreen(isDark: false, startIndex: i, videos: _myVideos),
+                          builder: (_) => VideoFeedScreen(isDark: false, startIndex: i),
                         ));
                       },
                       child: Container(

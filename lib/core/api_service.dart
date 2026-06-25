@@ -199,6 +199,16 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Profil ──────────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getMyProfile() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/auth/me'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
   // ── Payments ─────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> initiatePayment({
