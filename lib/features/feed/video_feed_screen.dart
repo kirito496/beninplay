@@ -5,6 +5,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
+import '../profile/creator_profile_screen.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -48,6 +49,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   int _page = 1;
   bool _hasMore = true;
   int _lastRefreshKey = 0;
+  bool _showFollowing = false; // onglet Abonnements
 
   // Cache des contrôleurs : seulement current + next pour économiser la bande passante
   final Map<int, VideoPlayerController> _controllers = {};
@@ -165,6 +167,20 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (index >= _videos.length - 3) _loadVideos();
   }
 
+  void _switchTab(bool following) {
+    if (_showFollowing == following) return;
+    _disposeAllControllers();
+    setState(() {
+      _showFollowing = following;
+      _videos = [];
+      _page = 1;
+      _hasMore = true;
+      _isLoading = true;
+      _currentIndex = 0;
+    });
+    _loadVideos();
+  }
+
   // Vues déjà comptées dans cette session (évite le double comptage)
   final Set<String> _viewed = {};
 
@@ -180,18 +196,24 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   Future<void> _loadVideos() async {
     if (!_hasMore) return;
     try {
-      final data = await ApiService.getVideos(page: _page);
+      final List<Map<String, dynamic>> raw;
+      if (_showFollowing) {
+        raw = await ApiService.getFollowingFeed(page: _page);
+      } else {
+        final data = await ApiService.getVideos(page: _page);
+        final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+        raw = list.whereType<Map<String, dynamic>>().toList();
+      }
       if (!mounted) return;
-      final List<dynamic> raw = data['videos'] ?? data['data'] ?? [];
       final fetched = raw
-          .whereType<Map<String, dynamic>>()
           .where((v) => (v['video_url'] ?? '').toString().isNotEmpty)
           .map((v) => VideoModel.fromJson(v))
           .toList();
       setState(() {
         _videos.removeWhere((v) => v.id == 'bee_fallback');
         _videos.addAll(fetched);
-        _videos.add(_fallbackVideo);
+        // Vidéo d'accueil seulement dans "Pour toi"
+        if (!_showFollowing) _videos.add(_fallbackVideo);
         if (fetched.length < 20) _hasMore = false;
         _page++;
         _isLoading = false;
@@ -232,9 +254,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _TabButton(label: 'Pour toi', isSelected: true, onTap: () {}),
+            _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
             const SizedBox(width: 20),
-            _TabButton(label: 'Abonnements', isSelected: false, onTap: () {}),
+            _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
           ],
         ),
         actions: [
@@ -247,15 +269,24 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _videos.isEmpty
-          ? const Center(
+          ? Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.video_library_outlined, color: Colors.white30, size: 64),
-            SizedBox(height: 16),
-            Text('Aucune vidéo pour le moment', style: TextStyle(color: Colors.white54, fontSize: 16)),
-            SizedBox(height: 8),
-            Text('Publie la première !', style: TextStyle(color: Colors.white30, fontSize: 13)),
+            Icon(_showFollowing ? Icons.people_outline : Icons.video_library_outlined,
+                color: Colors.white30, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              _showFollowing ? 'Tu ne suis personne' : 'Aucune vidéo pour le moment',
+              style: const TextStyle(color: Colors.white54, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _showFollowing
+                  ? 'Suis des créateurs pour voir leurs vidéos ici'
+                  : 'Publie la première !',
+              style: const TextStyle(color: Colors.white30, fontSize: 13),
+            ),
           ],
         ),
       )
@@ -542,20 +573,21 @@ class _VideoPageState extends State<_VideoPage> {
     }
   }
 
-  void _toggleFollow() {
-    setState(() => _isFollowing = !_isFollowing);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _isFollowing
-              ? 'Vous suivez @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}'
-              : 'Vous ne suivez plus ce créateur',
-        ),
-        backgroundColor: _isFollowing ? AppColors.primary : Colors.grey,
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _toggleFollow() async {
+    if (widget.video.id == 'bee_fallback') return;
+    final was = _isFollowing;
+    setState(() => _isFollowing = !was);
+    try {
+      final now = await ApiService.toggleFollow(widget.video.creatorId);
+      if (mounted) setState(() => _isFollowing = now);
+    } catch (_) {
+      if (mounted) setState(() => _isFollowing = was);
+    }
+  }
+
+  void _openCreator() {
+    if (widget.video.id == 'bee_fallback') return;
+    CreatorProfileScreen.open(context, widget.video.creatorId, name: widget.video.creatorName);
   }
 
   void _share() {
@@ -736,6 +768,10 @@ class _VideoPageState extends State<_VideoPage> {
         // ── Vidéo ────────────────────────────────────────────────────────
         GestureDetector(
           onTap: _togglePlayPause,
+          // Glisser vers la gauche → ouvre le profil du créateur
+          onHorizontalDragEnd: (details) {
+            if ((details.primaryVelocity ?? 0) < -250) _openCreator();
+          },
           child: Container(
             color: Colors.black,
             child: _isInitialized && _ctrl != null
@@ -808,7 +844,7 @@ class _VideoPageState extends State<_VideoPage> {
               Row(
                 children: [
                   GestureDetector(
-                    onTap: _toggleFollow,
+                    onTap: _openCreator,
                     child: CircleAvatar(
                       radius: 18,
                       backgroundColor: AppColors.primary,
@@ -825,7 +861,7 @@ class _VideoPageState extends State<_VideoPage> {
                   const SizedBox(width: 8),
                   Flexible(
                     child: GestureDetector(
-                      onTap: _toggleFollow,
+                      onTap: _openCreator,
                       child: Text(
                         '@${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
                         overflow: TextOverflow.ellipsis,

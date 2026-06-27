@@ -242,6 +242,7 @@ class ApiService {
     int? targetAgeMin,
     int? targetAgeMax,
     int? boostDays,
+    List<String>? targetTags,
   }) async {
     final res = await http.post(
       Uri.parse('${AppConfig.api}/api/payments/initiate'),
@@ -257,9 +258,69 @@ class ApiService {
         if (targetAgeMin != null) 'targetAgeMin': targetAgeMin,
         if (targetAgeMax != null) 'targetAgeMax': targetAgeMax,
         if (boostDays != null) 'boostDays': boostDays,
+        if (targetTags != null) 'targetTags': targetTags,
       }),
     );
     return jsonDecode(res.body);
+  }
+
+  // ── Créateurs / Abonnements ───────────────────────────────────────────────
+
+  /// Profil public d'un créateur (+ compteurs + is_following)
+  static Future<Map<String, dynamic>> getUserProfile(String userId) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/users/$userId'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    return (data['user'] as Map<String, dynamic>?) ?? {};
+  }
+
+  /// Suivre / ne plus suivre un créateur (toggle). Retourne true si suivi.
+  static Future<bool> toggleFollow(String userId) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/users/$userId/follow'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    return data['following'] == true;
+  }
+
+  /// Vidéos d'un créateur
+  static Future<List<Map<String, dynamic>>> getCreatorVideos(String userId) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/videos?creator_id=$userId&limit=50'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Feed "Abonnements" : vidéos des créateurs suivis
+  static Future<List<Map<String, dynamic>>> getFollowingFeed({int page = 1}) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/videos/following?page=$page&limit=20'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['videos'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Hashtags les plus populaires (pour le ciblage du boost)
+  static Future<List<String>> getPopularTags() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/videos/popular-tags'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      final List<dynamic> list = data['tags'] ?? [];
+      return list.map((e) => (e['tag'] ?? '').toString()).where((t) => t.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Estime le nombre d'utilisateurs touchés par un ciblage de boost
