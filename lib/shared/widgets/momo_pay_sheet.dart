@@ -21,6 +21,12 @@ class MomoPaySheet extends StatefulWidget {
   final String type;
   final String? videoId;
   final String description;
+  final String? targetRegion;
+  final List<String>? targetRegions;
+  final String? targetGender;
+  final int? targetAgeMin;
+  final int? targetAgeMax;
+  final int? boostDays;
 
   const MomoPaySheet({
     super.key,
@@ -28,6 +34,12 @@ class MomoPaySheet extends StatefulWidget {
     required this.type,
     this.videoId,
     required this.description,
+    this.targetRegion,
+    this.targetRegions,
+    this.targetGender,
+    this.targetAgeMin,
+    this.targetAgeMax,
+    this.boostDays,
   });
 
   static Future<bool?> show(
@@ -36,6 +48,12 @@ class MomoPaySheet extends StatefulWidget {
     required String type,
     required String description,
     String? videoId,
+    String? targetRegion,
+    List<String>? targetRegions,
+    String? targetGender,
+    int? targetAgeMin,
+    int? targetAgeMax,
+    int? boostDays,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -49,6 +67,12 @@ class MomoPaySheet extends StatefulWidget {
         type: type,
         description: description,
         videoId: videoId,
+        targetRegion: targetRegion,
+        targetRegions: targetRegions,
+        targetGender: targetGender,
+        targetAgeMin: targetAgeMin,
+        targetAgeMax: targetAgeMax,
+        boostDays: boostDays,
       ),
     );
   }
@@ -132,6 +156,12 @@ class _MomoPaySheetState extends State<MomoPaySheet>
         type: widget.type,
         operator: _operator,
         videoId: widget.videoId,
+        targetRegion: widget.targetRegion,
+        targetRegions: widget.targetRegions,
+        targetGender: widget.targetGender,
+        targetAgeMin: widget.targetAgeMin,
+        targetAgeMax: widget.targetAgeMax,
+        boostDays: widget.boostDays,
       );
 
       if (!mounted) return;

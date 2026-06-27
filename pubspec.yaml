@@ -1,5 +1,5 @@
 name: beninplay
-description: Plateforme vidÃ©o BeninPlay â€” BÃ©nin
+description: Plateforme vidéo BeninPlay — Bénin
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -16,14 +16,18 @@ dependencies:
   # State management
   flutter_riverpod: ^2.5.1
 
-  # VidÃ©o
+  # Vidéo
   video_player: ^2.8.6
   chewie: ^1.8.1
 
-  # RÃ©seau
+  # Réseau
   dio: ^5.4.3+1
+  http: ^1.2.1
 
-  # Stockage sÃ©curisÃ©
+  # Supabase
+  supabase_flutter: ^2.5.6
+
+  # Stockage sécurisé
   flutter_secure_storage: ^9.0.0
 
   # Image / KYC
@@ -34,13 +38,19 @@ dependencies:
 
   # UI
   cached_network_image: ^3.3.1
+  flutter_cache_manager: ^3.3.1
+  video_thumbnail: ^0.5.3
+  path_provider: ^2.1.2
+
+  # Localisation (boost ciblé par région)
+  geolocator: ^11.0.0
+  geocoding: ^3.0.0
   shimmer: ^3.0.0
   cupertino_icons: ^1.0.6
 
   # Lives (Agora.io)
   agora_rtc_engine: ^6.3.2
   permission_handler: ^11.3.1
-  supabase_flutter: ^2.15.0
 
 dev_dependencies:
   flutter_test:

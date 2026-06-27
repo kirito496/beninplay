@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
@@ -50,6 +52,10 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   // Cache des contrôleurs : seulement current + next pour économiser la bande passante
   final Map<int, VideoPlayerController> _controllers = {};
 
+  // Mémorise l'état des likes pour qu'ils persistent quand on revient sur une vidéo
+  final Map<String, bool> _likeState = {};
+  final Map<String, int> _likeCount = {};
+
   @override
   void initState() {
     super.initState();
@@ -88,15 +94,35 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _controllers.clear();
   }
 
-  // Initialise le contrôleur pour un index donné
+  // Initialise le contrôleur pour un index donné (avec cache disque)
   Future<void> _initController(int index) async {
     if (_controllers.containsKey(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
-    final ctrl = VideoPlayerController.networkUrl(
-      Uri.parse(video.videoUrl),
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-    );
+
+    VideoPlayerController ctrl;
+    try {
+      // Récupère depuis le cache disque (télécharge 1 seule fois, puis 0 data)
+      final fileInfo = await DefaultCacheManager().getSingleFile(video.videoUrl);
+      if (!mounted) return;
+      ctrl = VideoPlayerController.file(
+        File(fileInfo.path),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+    } catch (_) {
+      // Si le cache échoue, lecture réseau directe
+      if (!mounted) return;
+      ctrl = VideoPlayerController.networkUrl(
+        Uri.parse(video.videoUrl),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+    }
+
+    // Vérifie qu'on n'a pas été disposé pendant le téléchargement
+    if (!_controllers.containsKey(index) && (index - _currentIndex).abs() > 1) {
+      ctrl.dispose();
+      return;
+    }
     _controllers[index] = ctrl;
     await ctrl.initialize();
     ctrl.setLooping(true);
@@ -126,6 +152,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // Joue la nouvelle
     _controllers[index]?.play();
 
+    // Compte la vue
+    _registerView(index);
+
     // Précharge la suivante
     _initController(index + 1);
 
@@ -134,6 +163,18 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
     // Charge plus de vidéos si proche de la fin
     if (index >= _videos.length - 3) _loadVideos();
+  }
+
+  // Vues déjà comptées dans cette session (évite le double comptage)
+  final Set<String> _viewed = {};
+
+  void _registerView(int index) {
+    if (index < 0 || index >= _videos.length) return;
+    final v = _videos[index];
+    if (v.id == 'bee_fallback') return; // pas la vidéo de bienvenue
+    if (_viewed.contains(v.id)) return;
+    _viewed.add(v.id);
+    ApiService.registerView(v.id);
   }
 
   Future<void> _loadVideos() async {
@@ -161,6 +202,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       // Initialise la première vidéo + précharge la suivante
       await _initController(_currentIndex);
       await _initController(_currentIndex + 1);
+      // Compte la vue de la première vidéo affichée
+      _registerView(_currentIndex);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -225,6 +268,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           video: _videos[index],
           controller: _controllers[index],
           isActive: index == _currentIndex && widget.isTabActive,
+          likedOverride: _likeState[_videos[index].id],
+          likeCountOverride: _likeCount[_videos[index].id],
+          onLikeChanged: (liked, count) {
+            _likeState[_videos[index].id] = liked;
+            _likeCount[_videos[index].id] = count;
+          },
         ),
       ),
     );
@@ -396,7 +445,17 @@ class _VideoPage extends StatefulWidget {
   final VideoModel video;
   final VideoPlayerController? controller;
   final bool isActive;
-  const _VideoPage({required this.video, required this.isActive, this.controller});
+  final bool? likedOverride;
+  final int? likeCountOverride;
+  final void Function(bool liked, int count)? onLikeChanged;
+  const _VideoPage({
+    required this.video,
+    required this.isActive,
+    this.controller,
+    this.likedOverride,
+    this.likeCountOverride,
+    this.onLikeChanged,
+  });
 
   @override
   State<_VideoPage> createState() => _VideoPageState();
@@ -416,8 +475,9 @@ class _VideoPageState extends State<_VideoPage> {
   @override
   void initState() {
     super.initState();
-    _likes = widget.video.likes;
-    _isLiked = widget.video.isLiked;
+    // Reprend l'état mémorisé s'il existe, sinon les données API
+    _likes = widget.likeCountOverride ?? widget.video.likes;
+    _isLiked = widget.likedOverride ?? widget.video.isLiked;
     _ctrl?.addListener(_onControllerUpdate);
   }
 
@@ -467,6 +527,8 @@ class _VideoPageState extends State<_VideoPage> {
       _isLiked = !_isLiked;
       _likes += _isLiked ? 1 : -1;
     });
+    // Mémorise tout de suite pour que le like persiste au retour
+    widget.onLikeChanged?.call(_isLiked, _likes);
     try {
       await ApiService.likeVideo(widget.video.id);
     } catch (_) {
@@ -475,6 +537,7 @@ class _VideoPageState extends State<_VideoPage> {
           _isLiked = wasLiked;
           _likes += wasLiked ? 1 : -1;
         });
+        widget.onLikeChanged?.call(_isLiked, _likes);
       }
     }
   }
@@ -760,14 +823,17 @@ class _VideoPageState extends State<_VideoPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _toggleFollow,
-                    child: Text(
-                      '@${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                  Flexible(
+                    child: GestureDetector(
+                      onTap: _toggleFollow,
+                      child: Text(
+                        '@${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   ),
@@ -797,6 +863,25 @@ class _VideoPageState extends State<_VideoPage> {
                 ],
               ),
               const SizedBox(height: 8),
+
+              if (widget.video.isBoosted)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.rocket_launch, color: Colors.black, size: 11),
+                      SizedBox(width: 4),
+                      Text('Sponsorisé',
+                          style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
 
               Text(
                 widget.video.title,

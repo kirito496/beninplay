@@ -14,6 +14,7 @@ class VideoModel {
   final int comments;
   final int views;
   final bool isLiked;
+  final bool isBoosted;
   final double price; // 0 = gratuit
   final DateTime createdAt;
 
@@ -31,6 +32,7 @@ class VideoModel {
     this.comments = 0,
     this.views = 0,
     this.isLiked = false,
+    this.isBoosted = false,
     this.price = 0,
     required this.createdAt,
   });
@@ -52,6 +54,7 @@ class VideoModel {
     comments: json['comments_count'] ?? json['comments'] ?? 0,
     views: json['views'] ?? 0,
     isLiked: json['is_liked'] ?? false,
+    isBoosted: json['is_boosted'] ?? false,
     price: (json['price'] ?? 0).toDouble(),
     createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
   );

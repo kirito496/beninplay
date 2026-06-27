@@ -78,6 +78,26 @@ class ApiService {
     return list.whereType<Map<String, dynamic>>().toList();
   }
 
+  static Future<List<Map<String, dynamic>>> getLikedVideos() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/videos/liked'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Enregistre une vue sur une vidéo (non bloquant)
+  static Future<void> registerView(String videoId) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConfig.api}/api/videos/$videoId/view'),
+        headers: await _headers(auth: true),
+      );
+    } catch (_) {}
+  }
+
   static Future<Map<String, dynamic>> getVideos({int page = 1}) async {
     final res = await http.get(
       Uri.parse('${AppConfig.api}/api/videos?page=$page&limit=20'),
@@ -216,6 +236,12 @@ class ApiService {
     required String type,
     required String operator,
     String? videoId,
+    String? targetRegion,
+    List<String>? targetRegions,
+    String? targetGender,
+    int? targetAgeMin,
+    int? targetAgeMax,
+    int? boostDays,
   }) async {
     final res = await http.post(
       Uri.parse('${AppConfig.api}/api/payments/initiate'),
@@ -225,6 +251,64 @@ class ApiService {
         'type': type,
         'operator': operator,
         if (videoId != null) 'videoId': videoId,
+        if (targetRegion != null) 'targetRegion': targetRegion,
+        if (targetRegions != null) 'targetRegions': targetRegions,
+        if (targetGender != null) 'targetGender': targetGender,
+        if (targetAgeMin != null) 'targetAgeMin': targetAgeMin,
+        if (targetAgeMax != null) 'targetAgeMax': targetAgeMax,
+        if (boostDays != null) 'boostDays': boostDays,
+      }),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Estime le nombre d'utilisateurs touchés par un ciblage de boost
+  static Future<int> getBoostReach({
+    required List<String> regions,
+    String gender = 'all',
+    int ageMin = 0,
+    int ageMax = 120,
+  }) async {
+    final qp = {
+      'regions': regions.join(','),
+      'gender': gender,
+      'ageMin': '$ageMin',
+      'ageMax': '$ageMax',
+    };
+    final uri = Uri.parse('${AppConfig.api}/api/videos/boost-reach').replace(queryParameters: qp);
+    final res = await http.get(uri, headers: await _headers(auth: true));
+    final data = jsonDecode(res.body);
+    return (data['reach'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Tableau de bord : les vidéos boostées de l'utilisateur + performances
+  static Future<List<Map<String, dynamic>>> getMyBoosts() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/videos/my-boosts'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['boosts'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Met à jour le profil (région, genre, année de naissance, pseudo, bio…)
+  static Future<Map<String, dynamic>> updateProfile({
+    String? region,
+    String? username,
+    String? bio,
+    String? gender,
+    int? birthYear,
+  }) async {
+    final res = await http.put(
+      Uri.parse('${AppConfig.api}/api/auth/profile'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({
+        if (region != null) 'region': region,
+        if (username != null) 'username': username,
+        if (bio != null) 'bio': bio,
+        if (gender != null) 'gender': gender,
+        if (birthYear != null) 'birthYear': birthYear,
       }),
     );
     return jsonDecode(res.body);
