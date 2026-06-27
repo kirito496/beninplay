@@ -211,6 +211,8 @@ class _OtpScreenState extends State<OtpScreen> {
                         onPressed: _verify,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          minimumSize: const Size(0, 36),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text('Valider', style: TextStyle(fontSize: 13)),
                       ),
