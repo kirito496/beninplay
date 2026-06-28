@@ -760,8 +760,6 @@ class _VideoPageState extends State<_VideoPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -836,7 +834,7 @@ class _VideoPageState extends State<_VideoPage> {
         Positioned(
           left: 16,
           right: 80,
-          bottom: bottomPadding + 60,
+          bottom: 16,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -965,7 +963,7 @@ class _VideoPageState extends State<_VideoPage> {
         // ── Actions droite ────────────────────────────────────────────────
         Positioned(
           right: 10,
-          bottom: bottomPadding + 65,
+          bottom: 24,
           child: Column(
             children: [
               _ActionButton(
