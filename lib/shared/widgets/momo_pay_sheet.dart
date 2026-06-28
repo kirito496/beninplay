@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 
@@ -27,6 +28,7 @@ class MomoPaySheet extends StatefulWidget {
   final int? targetAgeMin;
   final int? targetAgeMax;
   final int? boostDays;
+  final List<String>? targetTags;
 
   const MomoPaySheet({
     super.key,
@@ -40,21 +42,23 @@ class MomoPaySheet extends StatefulWidget {
     this.targetAgeMin,
     this.targetAgeMax,
     this.boostDays,
+    this.targetTags,
   });
 
   static Future<bool?> show(
-    BuildContext context, {
-    required int amount,
-    required String type,
-    required String description,
-    String? videoId,
-    String? targetRegion,
-    List<String>? targetRegions,
-    String? targetGender,
-    int? targetAgeMin,
-    int? targetAgeMax,
-    int? boostDays,
-  }) {
+      BuildContext context, {
+        required int amount,
+        required String type,
+        required String description,
+        String? videoId,
+        String? targetRegion,
+        List<String>? targetRegions,
+        String? targetGender,
+        int? targetAgeMin,
+        int? targetAgeMax,
+        int? boostDays,
+        List<String>? targetTags,
+      }) {
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -73,6 +77,7 @@ class MomoPaySheet extends StatefulWidget {
         targetAgeMin: targetAgeMin,
         targetAgeMax: targetAgeMax,
         boostDays: boostDays,
+        targetTags: targetTags,
       ),
     );
   }
@@ -94,6 +99,8 @@ class _MomoPaySheetState extends State<MomoPaySheet>
 
   String? _paymentId;
   String? _errorMsg;
+  String? _merchantNumber; // numéro marchand renvoyé par le serveur
+  int? _payAmount;         // montant exact à envoyer (unique)
   Timer? _pollTimer;
   int _pollCount = 0;
   int _secondsLeft = 180; // 3 minutes
@@ -162,6 +169,7 @@ class _MomoPaySheetState extends State<MomoPaySheet>
         targetAgeMin: widget.targetAgeMin,
         targetAgeMax: widget.targetAgeMax,
         boostDays: widget.boostDays,
+        targetTags: widget.targetTags,
       );
 
       if (!mounted) return;
@@ -170,6 +178,8 @@ class _MomoPaySheetState extends State<MomoPaySheet>
         final p = result['payment'] ?? result;
         setState(() {
           _paymentId = (p['id'] ?? p['paymentId'])?.toString();
+          _merchantNumber = (p['paymentNumber'] ?? p['payment_number'])?.toString();
+          _payAmount = (p['amount'] as num?)?.toInt() ?? widget.amount;
           _step = _PayStep.waiting;
           _isLoading = false;
           _secondsLeft = 180;
@@ -403,21 +413,21 @@ class _MomoPaySheetState extends State<MomoPaySheet>
             child: _isLoading
                 ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
                 : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.phone_android, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Envoyer la demande ${_operator == 'mtn' ? 'MTN' : 'Moov'}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ],
-                  ),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.phone_android, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Je vais payer ${_operator == 'mtn' ? 'MTN' : 'Moov'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 12),
           const Text(
-            'Une demande USSD sera envoyée sur votre téléphone.\nApprouvez avec votre PIN MoMo.',
+            'Tu vas envoyer le montant exact à notre numéro depuis ton MoMo.\nDès qu\'on reçoit le paiement, ton boost s\'active automatiquement.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 12),
           ),
@@ -429,115 +439,97 @@ class _MomoPaySheetState extends State<MomoPaySheet>
   // ── Étape 2 : Attente confirmation ────────────────────────────────────────
 
   Widget _buildWaiting() {
-    final phone = '+229 ${_phoneCtrl.text.trim()}';
+    final number = _merchantNumber ?? '...';
+    final amount = _payAmount ?? widget.amount;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Icône téléphone animée
-          ScaleTransition(
-            scale: _pulseAnim,
-            child: Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: _opColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-                border: Border.all(color: _opColor.withValues(alpha: 0.5), width: 2),
-              ),
-              child: Icon(Icons.phone_android, color: _opColor, size: 42),
-            ),
-          ),
-          const SizedBox(height: 20),
-
+          const SizedBox(height: 8),
           const Text(
-            'Demande envoyée !',
+            'Finalise ton paiement',
             style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
-          RichText(
+          const SizedBox(height: 6),
+          Text(
+            'Depuis ton ${_operator == 'mtn' ? 'MTN MoMo' : 'Moov Money'}, envoie le montant EXACT à notre numéro :',
             textAlign: TextAlign.center,
-            text: TextSpan(
-              style: const TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
-              children: [
-                const TextSpan(text: 'Vérifiez votre téléphone\n'),
-                TextSpan(
-                  text: phone,
-                  style: TextStyle(color: _opColor, fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(text: '\net approuvez la demande avec votre PIN.'),
-              ],
-            ),
+            style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.4),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
 
-          // USSD visuel
+          // Numéro marchand (copiable)
+          _copyRow('Numéro', number, () {
+            Clipboard.setData(ClipboardData(text: number));
+            _toast('Numéro copié');
+          }),
+          const SizedBox(height: 10),
+          // Montant exact (copiable)
+          _copyRow('Montant exact', '$amount FCFA', () {
+            Clipboard.setData(ClipboardData(text: '$amount'));
+            _toast('Montant copié');
+          }, highlight: true),
+
+          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white12),
+              color: Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
             ),
-            child: Column(
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  color: _operator == 'mtn' ? const Color(0xFFFFCC00) : const Color(0xFF0066CC),
-                  child: Text(
-                    _operator == 'mtn' ? 'MTN MoMo' : 'Moov Money',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Confirmer le paiement de\n${widget.amount} FCFA à BeninPlay ?',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
-                ),
-                const SizedBox(height: 12),
-                const Divider(color: Colors.white12),
-                const Text(
-                  'Entrez votre code PIN\npour confirmer',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: ['1', '2', '3', '4', '5'].map((d) => Container(
-                    width: 30, height: 30,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white24),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.circle, color: Colors.white38, size: 8),
-                  )).toList(),
-                ),
-              ],
+            child: const Row(children: [
+              Icon(Icons.info_outline, color: Colors.orange, size: 18),
+              SizedBox(width: 8),
+              Expanded(child: Text(
+                'Envoie le montant EXACT (au franc près), sinon on ne pourra pas reconnaître ton paiement.',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+              )),
+            ]),
+          ),
+          const SizedBox(height: 18),
+
+          // Bouton qui ouvre le menu MoMo
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _openUssd,
+              icon: const Icon(Icons.dialpad, size: 20),
+              label: Text('Ouvrir ${_operator == 'mtn' ? 'MTN MoMo (*880#)' : 'Moov Money (*855#)'}'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _operator == 'mtn' ? const Color(0xFFFFCC00) : const Color(0xFF0066CC),
+                foregroundColor: _operator == 'mtn' ? Colors.black : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Text(
+            _operator == 'mtn'
+                ? 'Menu MTN : 1 (Transfert) → numéro → montant → motif → PIN'
+                : 'Menu Moov : option 1 → numéro → montant → PIN',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 18),
 
-          // Countdown + spinner
+          // Attente confirmation
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(color: Colors.orange, strokeWidth: 2),
-              ),
+              const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
               const SizedBox(width: 10),
-              Text(
-                'Attente de confirmation... $_timeLeft',
-                style: const TextStyle(color: Colors.orange, fontSize: 13),
-              ),
+              Text('En attente du paiement... $_timeLeft',
+                  style: const TextStyle(color: AppColors.primary, fontSize: 13)),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
+          const Text('Le boost s\'active dès qu\'on reçoit ton argent.',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(height: 12),
           TextButton(
             onPressed: _reset,
             child: const Text('Annuler', style: TextStyle(color: Colors.white38)),
@@ -545,6 +537,49 @@ class _MomoPaySheetState extends State<MomoPaySheet>
         ],
       ),
     );
+  }
+
+  Widget _copyRow(String label, String value, VoidCallback onCopy, {bool highlight = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: highlight ? AppColors.primary.withValues(alpha: 0.6) : Colors.white24),
+      ),
+      child: Row(children: [
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(height: 2),
+          Text(value, style: TextStyle(
+              color: highlight ? AppColors.primary : Colors.white,
+              fontSize: 20, fontWeight: FontWeight.bold)),
+        ]),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: onCopy,
+          icon: const Icon(Icons.copy, size: 16, color: AppColors.primary),
+          label: const Text('Copier', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+        ),
+      ]),
+    );
+  }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppColors.primary, duration: const Duration(seconds: 1)),
+    );
+  }
+
+  // Ouvre le clavier avec le code USSD du menu MoMo (l'utilisateur finit dans le menu)
+  Future<void> _openUssd() async {
+    final code = _operator == 'mtn' ? '*880#' : '*855#';
+    final uri = Uri.parse('tel:${code.replaceAll('#', '%23')}');
+    try {
+      if (!await launchUrl(uri)) _toast('Impossible d\'ouvrir le clavier');
+    } catch (_) {
+      _toast('Compose $code manuellement');
+    }
   }
 
   // ── Étape 3 : Succès ──────────────────────────────────────────────────────
@@ -595,7 +630,7 @@ class _MomoPaySheetState extends State<MomoPaySheet>
           Container(
             width: 80, height: 80,
             decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), shape: BoxShape.circle,
-              border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 2)),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 2)),
             child: const Icon(Icons.close_rounded, color: Colors.red, size: 48),
           ),
           const SizedBox(height: 20),

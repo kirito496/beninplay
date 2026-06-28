@@ -45,6 +45,9 @@ dependencies:
   # Localisation (boost ciblé par région)
   geolocator: ^11.0.0
   geocoding: ^3.0.0
+
+  # Ouvrir le clavier USSD (paiement MoMo)
+  url_launcher: ^6.2.5
   shimmer: ^3.0.0
   cupertino_icons: ^1.0.6
 
