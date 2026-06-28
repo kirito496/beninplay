@@ -9,7 +9,7 @@ import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/benin_regions.dart';
 import '../../shared/models/video_model.dart';
-import 'boost_sheet.dart';
+import 'boost_screen.dart';
 import 'boosts_dashboard.dart';
 import '../dark_zone/dark_gate_screen.dart' as dark_gate;
 import '../auth/login_screen.dart';
@@ -376,7 +376,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         for (final c in candidates) {
           if (c == null) continue;
           final match = BeninRegions.all.firstWhere(
-                (r) => c.toLowerCase().contains(r.toLowerCase()) || r.toLowerCase().contains(c.toLowerCase()),
+            (r) => c.toLowerCase().contains(r.toLowerCase()) || r.toLowerCase().contains(c.toLowerCase()),
             orElse: () => '',
           );
           if (match.isNotEmpty) { found = match; break; }
@@ -422,7 +422,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               const SizedBox(height: 12),
               Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 12),
               const Text('Ma région',
                   style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
@@ -492,7 +492,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const Padding(
                 padding: EdgeInsets.only(left: 16, bottom: 8),
                 child: Align(alignment: Alignment.centerLeft,
-                    child: Text('Département', style: TextStyle(color: Colors.white54, fontSize: 13))),
+                  child: Text('Département', style: TextStyle(color: Colors.white54, fontSize: 13))),
               ),
               Expanded(
                 child: ListView(
@@ -614,7 +614,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               right: 4,
                               child: GestureDetector(
                                 onTap: () async {
-                                  final ok = await BoostSheet.show(context, v.id);
+                                  final ok = await BoostScreen.open(context, v.id);
                                   if (ok == true && mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(content: Text('Vidéo boostée ! 🚀'),
@@ -785,7 +785,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Navigator.pop(context);
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
+                (route) => false,
               );
             },
             child: const Text('Déconnexion', style: TextStyle(color: AppColors.error)),
@@ -1074,7 +1074,7 @@ class _VideoThumbState extends State<_VideoThumb> {
     if (_path != null) {
       return Image.file(File(_path!), fit: BoxFit.cover,
           errorBuilder: (_, __, ___) =>
-          const Icon(Icons.play_circle_fill, color: Colors.white24, size: 36));
+              const Icon(Icons.play_circle_fill, color: Colors.white24, size: 36));
     }
     return const Center(
       child: Icon(Icons.play_circle_fill, color: Colors.white24, size: 36),
@@ -1239,16 +1239,16 @@ class _FaqItemState extends State<_FaqItem> {
         onTap: () => setState(() => _open = !_open),
         subtitle: _open
             ? Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            widget.a,
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-        )
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  widget.a,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              )
             : null,
       ),
     );

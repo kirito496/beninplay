@@ -46,19 +46,19 @@ class MomoPaySheet extends StatefulWidget {
   });
 
   static Future<bool?> show(
-      BuildContext context, {
-        required int amount,
-        required String type,
-        required String description,
-        String? videoId,
-        String? targetRegion,
-        List<String>? targetRegions,
-        String? targetGender,
-        int? targetAgeMin,
-        int? targetAgeMax,
-        int? boostDays,
-        List<String>? targetTags,
-      }) {
+    BuildContext context, {
+    required int amount,
+    required String type,
+    required String description,
+    String? videoId,
+    String? targetRegion,
+    List<String>? targetRegions,
+    String? targetGender,
+    int? targetAgeMin,
+    int? targetAgeMax,
+    int? boostDays,
+    List<String>? targetTags,
+  }) {
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -413,16 +413,16 @@ class _MomoPaySheetState extends State<MomoPaySheet>
             child: _isLoading
                 ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
                 : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.phone_android, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Je vais payer ${_operator == 'mtn' ? 'MTN' : 'Moov'}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ],
-            ),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.phone_android, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Je vais payer ${_operator == 'mtn' ? 'MTN' : 'Moov'}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ],
+                  ),
           ),
 
           const SizedBox(height: 12),
@@ -552,8 +552,8 @@ class _MomoPaySheetState extends State<MomoPaySheet>
           Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
           const SizedBox(height: 2),
           Text(value, style: TextStyle(
-              color: highlight ? AppColors.primary : Colors.white,
-              fontSize: 20, fontWeight: FontWeight.bold)),
+            color: highlight ? AppColors.primary : Colors.white,
+            fontSize: 20, fontWeight: FontWeight.bold)),
         ]),
         const Spacer(),
         TextButton.icon(
@@ -630,7 +630,7 @@ class _MomoPaySheetState extends State<MomoPaySheet>
           Container(
             width: 80, height: 80,
             decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), shape: BoxShape.circle,
-                border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 2)),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 2)),
             child: const Icon(Icons.close_rounded, color: Colors.red, size: 48),
           ),
           const SizedBox(height: 20),
