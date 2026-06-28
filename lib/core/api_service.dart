@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_compress/video_compress.dart';
 import 'app_config.dart';
 
 class ApiService {
@@ -116,14 +117,29 @@ class ApiService {
     void Function(int percent)? onProgress,
   }) async {
     try {
+      // ── Compression (réduit fortement la taille → moins de data à l'upload ET à la lecture) ──
+      String uploadPath = filePath;
+      try {
+        onStatus?.call('Compression de la vidéo...');
+        final info = await VideoCompress.compressVideo(
+          filePath,
+          quality: VideoQuality.MediumQuality, // bon compromis qualité/taille
+          deleteOrigin: false,
+          includeAudio: true,
+        );
+        if (info != null && info.path != null && info.path!.isNotEmpty) {
+          uploadPath = info.path!;
+        }
+      } catch (_) {
+        // Si la compression échoue, on envoie le fichier original
+        uploadPath = filePath;
+      }
+
       onStatus?.call('Lecture du fichier...');
-      final bytes = await File(filePath).readAsBytes();
-      final ext = filePath.split('.').last.toLowerCase();
-      final mimeType = ext == 'mp4'
-          ? 'video/mp4'
-          : ext == 'mov'
-          ? 'video/quicktime'
-          : 'video/mp4';
+      final bytes = await File(uploadPath).readAsBytes();
+      // On force l'extension .mp4 (la compression sort toujours du mp4)
+      final ext = 'mp4';
+      const mimeType = 'video/mp4';
 
       final userId = await getCurrentUserId();
       if (userId == null) {

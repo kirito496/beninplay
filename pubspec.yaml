@@ -19,6 +19,7 @@ dependencies:
   # Vidéo
   video_player: ^2.8.6
   chewie: ^1.8.1
+  video_compress: ^3.1.2
 
   # Réseau
   dio: ^5.4.3+1
