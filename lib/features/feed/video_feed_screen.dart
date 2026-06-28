@@ -949,9 +949,12 @@ class _VideoPageState extends State<_VideoPage> {
                 children: [
                   Icon(Icons.music_note, color: Colors.white, size: 13),
                   SizedBox(width: 4),
-                  Text(
-                    'Musique béninoise originale',
-                    style: TextStyle(color: Colors.white, fontSize: 11),
+                  Flexible(
+                    child: Text(
+                      'Musique béninoise originale',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
                   ),
                 ],
               ),
