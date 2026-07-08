@@ -396,8 +396,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(res['error']?.toString() ?? 'Erreur lors de la publication'),
+                            content: Text(res['message']?.toString() ?? 'Erreur lors de la publication'),
                             backgroundColor: AppColors.error,
+                            duration: const Duration(seconds: 6),
                           ),
                         );
                       }

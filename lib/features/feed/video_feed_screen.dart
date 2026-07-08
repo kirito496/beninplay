@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../core/api_service.dart';
+import '../../core/screen_security.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
 import '../profile/creator_profile_screen.dart';
@@ -63,6 +65,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     super.initState();
     _lastRefreshKey = widget.refreshKey;
     _pageController = PageController();
+    // Zone Dark : bloque captures d'écran + enregistrement d'écran
+    if (widget.isDark) ScreenSecurity.enable();
     _loadVideos();
   }
 
@@ -103,21 +107,30 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     final video = _videos[index];
 
     VideoPlayerController ctrl;
-    try {
-      // Récupère depuis le cache disque (télécharge 1 seule fois, puis 0 data)
-      final fileInfo = await DefaultCacheManager().getSingleFile(video.videoUrl);
-      if (!mounted) return;
-      ctrl = VideoPlayerController.file(
-        File(fileInfo.path),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-      );
-    } catch (_) {
-      // Si le cache échoue, lecture réseau directe
+    if (widget.isDark) {
+      // Zone Dark : lecture réseau directe, AUCUNE mise en cache sur le disque
+      // → la vidéo n'est jamais stockée localement (non téléchargeable).
       if (!mounted) return;
       ctrl = VideoPlayerController.networkUrl(
         Uri.parse(video.videoUrl),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
+    } else {
+      try {
+        // Zone normale : cache disque (télécharge 1 seule fois, puis 0 data)
+        final fileInfo = await DefaultCacheManager().getSingleFile(video.videoUrl);
+        if (!mounted) return;
+        ctrl = VideoPlayerController.file(
+          File(fileInfo.path),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+        );
+      } catch (_) {
+        if (!mounted) return;
+        ctrl = VideoPlayerController.networkUrl(
+          Uri.parse(video.videoUrl),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+        );
+      }
     }
 
     // Vérifie qu'on n'a pas été disposé pendant le téléchargement
@@ -197,7 +210,10 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (!_hasMore) return;
     try {
       final List<Map<String, dynamic>> raw;
-      if (_showFollowing) {
+      if (widget.isDark) {
+        // Feed Dark : source totalement séparée
+        raw = await ApiService.getDarkVideos(page: _page);
+      } else if (_showFollowing) {
         raw = await ApiService.getFollowingFeed(page: _page);
       } else {
         final data = await ApiService.getVideos(page: _page);
@@ -212,8 +228,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       setState(() {
         _videos.removeWhere((v) => v.id == 'bee_fallback');
         _videos.addAll(fetched);
-        // Vidéo d'accueil seulement dans "Pour toi"
-        if (!_showFollowing) _videos.add(_fallbackVideo);
+        // Vidéo d'accueil seulement dans "Pour toi" (jamais en Zone Dark)
+        if (!_showFollowing && !widget.isDark) _videos.add(_fallbackVideo);
         if (fetched.length < 20) _hasMore = false;
         _page++;
         _isLoading = false;
@@ -230,14 +246,17 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        if (_videos.isEmpty) _videos = [_fallbackVideo];
+        // Pas de vidéo d'accueil en Zone Dark
+        if (_videos.isEmpty && !widget.isDark) _videos = [_fallbackVideo];
       });
-      await _initController(0);
+      if (_videos.isNotEmpty) await _initController(0);
     }
   }
 
   @override
   void dispose() {
+    // Retire la protection d'écran en quittant la Zone Dark
+    if (widget.isDark) ScreenSecurity.disable();
     _disposeAllControllers();
     _pageController.dispose();
     super.dispose();
@@ -251,20 +270,42 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
-            const SizedBox(width: 20),
-            _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white, size: 26),
-            onPressed: () => _showSearch(context),
-          ),
-        ],
+        leading: widget.isDark
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        title: widget.isDark
+            ? const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Zone Dark ',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text('🔞', style: TextStyle(fontSize: 18)),
+                ],
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
+                  const SizedBox(width: 20),
+                  _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
+                ],
+              ),
+        actions: widget.isDark
+            ? const [
+                Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: Icon(Icons.lock, color: Colors.white38, size: 20),
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.search, color: Colors.white, size: 26),
+                  onPressed: () => _showSearch(context),
+                ),
+              ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
@@ -623,6 +664,7 @@ class _VideoPageState extends State<_VideoPage> {
                   icon: Icons.link,
                   label: 'Copier lien',
                   onTap: () {
+                    Clipboard.setData(ClipboardData(text: widget.video.videoUrl));
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

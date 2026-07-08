@@ -324,6 +324,17 @@ class ApiService {
     return list.whereType<Map<String, dynamic>>().toList();
   }
 
+  /// Feed INDÉPENDANT de la Zone Dark (+18). Ne renvoie que les vidéos dark.
+  static Future<List<Map<String, dynamic>>> getDarkVideos({int page = 1}) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/videos/dark?page=$page&limit=20'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['videos'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
   /// Hashtags les plus populaires (pour le ciblage du boost)
   static Future<List<String>> getPopularTags() async {
     try {
