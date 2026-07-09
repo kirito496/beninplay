@@ -110,6 +110,7 @@ class ApiService {
     required String title,
     String? description,
     String zone = 'normal',
+    int price = 0,
     List<String> tags = const [],
     void Function(String)? onStatus,
     void Function(int percent)? onProgress,
@@ -145,6 +146,7 @@ class ApiService {
         'title': title,
         'description': description ?? '',
         'zone': zone,
+        'price': '$price',
         'tags': tags.join(','),
         'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
       });

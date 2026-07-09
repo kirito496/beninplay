@@ -7,6 +7,7 @@ import '../../core/api_service.dart';
 import '../../core/screen_security.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
+import '../../shared/widgets/momo_pay_sheet.dart';
 import '../profile/creator_profile_screen.dart';
 
 class VideoFeedScreen extends StatefulWidget {
@@ -180,6 +181,19 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (index >= _videos.length - 3) _loadVideos();
   }
 
+  // Recharge tout le feed (ex: après l'achat d'une vidéo verrouillée)
+  void _hardRefresh() {
+    _disposeAllControllers();
+    setState(() {
+      _videos = [];
+      _page = 1;
+      _hasMore = true;
+      _isLoading = true;
+      _currentIndex = 0;
+    });
+    _loadVideos();
+  }
+
   void _switchTab(bool following) {
     if (_showFollowing == following) return;
     _disposeAllControllers();
@@ -346,6 +360,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             _likeState[_videos[index].id] = liked;
             _likeCount[_videos[index].id] = count;
           },
+          onUnlocked: _hardRefresh,
         ),
       ),
     );
@@ -520,6 +535,7 @@ class _VideoPage extends StatefulWidget {
   final bool? likedOverride;
   final int? likeCountOverride;
   final void Function(bool liked, int count)? onLikeChanged;
+  final VoidCallback? onUnlocked;
   const _VideoPage({
     required this.video,
     required this.isActive,
@@ -527,6 +543,7 @@ class _VideoPage extends StatefulWidget {
     this.likedOverride,
     this.likeCountOverride,
     this.onLikeChanged,
+    this.onUnlocked,
   });
 
   @override
@@ -800,8 +817,71 @@ class _VideoPageState extends State<_VideoPage> {
     );
   }
 
+  // Écran de déblocage payant (vidéo vendue à l'unité)
+  Widget _buildPaywall(BuildContext context) {
+    final price = widget.video.price.toInt();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(color: const Color(0xFF101018)),
+        if (widget.video.thumbnailUrl != null && widget.video.thumbnailUrl!.isNotEmpty)
+          Image.network(widget.video.thumbnailUrl!, fit: BoxFit.cover,
+              color: Colors.black.withValues(alpha: 0.6), colorBlendMode: BlendMode.darken,
+              errorBuilder: (_, __, ___) => const SizedBox()),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_rounded, color: Colors.white, size: 56),
+                const SizedBox(height: 16),
+                Text(widget.video.title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('par @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final paid = await MomoPaySheet.show(
+                      context,
+                      amount: price,
+                      type: 'video',
+                      description: 'Achat vidéo : ${widget.video.title}',
+                      videoId: widget.video.id,
+                    );
+                    if (paid == true) widget.onUnlocked?.call();
+                  },
+                  icon: const Icon(Icons.lock_open_rounded, size: 20),
+                  label: Text('Débloquer pour $price FCFA',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Paiement unique — accès à vie à cette vidéo',
+                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Vidéo payante non achetée → écran de déblocage
+    if (widget.video.isLocked) {
+      return _buildPaywall(context);
+    }
     return Stack(
       fit: StackFit.expand,
       children: [

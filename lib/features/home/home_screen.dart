@@ -148,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showPublishForm(File videoFile) {
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
     String selectedZone = 'normal';
     final tags = <String>[];
     final tagCtrl = TextEditingController();
@@ -310,6 +311,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // Prix de vente à l'unité (0 = gratuit)
+                TextField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Prix (FCFA) — laisse vide pour gratuit',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    helperText: 'Si tu mets un prix, la vidéo est verrouillée jusqu\'au paiement',
+                    helperStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                    prefixIcon: Icon(Icons.sell_outlined, color: Colors.white38, size: 20),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 if (tags.isNotEmpty)
                   Wrap(
                     spacing: 6,
@@ -381,6 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: titleCtrl.text.trim(),
                       description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
                       zone: selectedZone,
+                      price: int.tryParse(priceCtrl.text.trim()) ?? 0,
                       tags: tags,
                     ).then((res) {
                       if (!mounted) return null;

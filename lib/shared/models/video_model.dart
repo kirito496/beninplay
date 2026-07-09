@@ -16,6 +16,7 @@ class VideoModel {
   final bool isLiked;
   final bool isBoosted;
   final double price; // 0 = gratuit
+  final bool isLocked; // vidéo payante non encore achetée par le spectateur
   final DateTime createdAt;
 
   const VideoModel({
@@ -34,6 +35,7 @@ class VideoModel {
     this.isLiked = false,
     this.isBoosted = false,
     this.price = 0,
+    this.isLocked = false,
     required this.createdAt,
   });
 
@@ -56,6 +58,7 @@ class VideoModel {
     isLiked: json['is_liked'] ?? false,
     isBoosted: json['is_boosted'] ?? false,
     price: (json['price'] ?? 0).toDouble(),
+    isLocked: json['is_locked'] == true,
     createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
   );
 
