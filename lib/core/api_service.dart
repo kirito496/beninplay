@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_compress/video_compress.dart';
@@ -8,19 +9,26 @@ import 'app_config.dart';
 
 class ApiService {
   static const _storage = FlutterSecureStorage();
+  static const _native = MethodChannel('beninplay/secure');
 
   static Future<String?> getToken() => _storage.read(key: 'auth_token');
   static Future<void> saveToken(String token) => _storage.write(key: 'auth_token', value: token);
   static Future<void> clearToken() => _storage.delete(key: 'auth_token');
 
-  /// Identifiant d'appareil stable (anti-multi-comptes). Généré une fois puis stocké.
+  /// Identifiant d'appareil stable (anti-multi-comptes).
+  /// Priorité à l'ANDROID_ID natif (survit à la réinstallation) ; sinon UUID stocké.
   static Future<String> _deviceId() async {
     var id = await _storage.read(key: 'device_id');
+    if (id != null && id.isNotEmpty) return id;
+    try {
+      final native = await _native.invokeMethod<String>('deviceId');
+      if (native != null && native.isNotEmpty) id = 'android:$native';
+    } catch (_) {}
     if (id == null || id.isEmpty) {
       final rnd = Random.secure();
-      id = List.generate(32, (_) => rnd.nextInt(16).toRadixString(16)).join();
-      await _storage.write(key: 'device_id', value: id);
+      id = 'rnd:${List.generate(32, (_) => rnd.nextInt(16).toRadixString(16)).join()}';
     }
+    await _storage.write(key: 'device_id', value: id);
     return id;
   }
 
