@@ -10,6 +10,7 @@ import '../../core/screen_security.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
 import '../../shared/widgets/momo_pay_sheet.dart';
+import '../../shared/widgets/tip_sheet.dart';
 import '../profile/creator_profile_screen.dart';
 
 class VideoFeedScreen extends StatefulWidget {
@@ -679,104 +680,6 @@ class _VideoPageState extends State<_VideoPage> {
     Share.share(text, subject: widget.video.title);
   }
 
-  void _subscribe() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.normalSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            CircleAvatar(
-              radius: 36,
-              backgroundColor: AppColors.primary,
-              child: Text(
-                widget.video.creatorName[0],
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              widget.video.creatorName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Soutenez ce créateur',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Envoyer un tip',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [100, 250, 500, 1000].map((amount) =>
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Tip de $amount FCFA envoyé à ${widget.video.creatorName} ❤️'),
-                          backgroundColor: AppColors.primary,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
-                      ),
-                      child: Text(
-                        '$amount F',
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ).toList(),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('S\'abonner au créateur — 2 000 FCFA/mois'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // Écran de déblocage payant (vidéo vendue à l'unité)
   Widget _buildPaywall(BuildContext context) {
@@ -1075,7 +978,12 @@ class _VideoPageState extends State<_VideoPage> {
                 icon: Icons.monetization_on_outlined,
                 label: 'Soutenir',
                 color: AppColors.accent,
-                onTap: _subscribe,
+                onTap: () => TipSheet.show(
+                  context,
+                  creatorId: widget.video.creatorId,
+                  creatorName: widget.video.creatorName,
+                  videoId: widget.video.id,
+                ),
               ),
               const SizedBox(height: 18),
               _RotatingDisk(

@@ -608,6 +608,28 @@ class ApiService {
     }
   }
 
+  /// Envoie un tip (soutien) payé en pièces → { success, coin_balance, code? }
+  static Future<Map<String, dynamic>> sendTip({
+    required String creatorId,
+    required int coins,
+    String? videoId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/gifts/tip'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({
+          'creatorId': creatorId,
+          'coins': coins,
+          if (videoId != null) 'videoId': videoId,
+        }),
+      );
+      return Map<String, dynamic>.from(jsonDecode(res.body));
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   static Future<int> getCoinBalance() async {
     try {
       final res = await http.get(
