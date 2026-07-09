@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_compress/video_compress.dart';
 import 'app_config.dart';
 
@@ -117,13 +115,13 @@ class ApiService {
     void Function(int percent)? onProgress,
   }) async {
     try {
-      // ── Compression (réduit fortement la taille → moins de data à l'upload ET à la lecture) ──
+      // ── Compression (réduit fortement la taille → upload plus rapide) ──
       String uploadPath = filePath;
       try {
         onStatus?.call('Compression de la vidéo...');
         final info = await VideoCompress.compressVideo(
           filePath,
-          quality: VideoQuality.MediumQuality, // bon compromis qualité/taille
+          quality: VideoQuality.MediumQuality,
           deleteOrigin: false,
           includeAudio: true,
         );
@@ -131,89 +129,61 @@ class ApiService {
           uploadPath = info.path!;
         }
       } catch (_) {
-        // Si la compression échoue, on envoie le fichier original
         uploadPath = filePath;
       }
 
-      onStatus?.call('Lecture du fichier...');
-      final bytes = await File(uploadPath).readAsBytes();
-      // On force l'extension .mp4 (la compression sort toujours du mp4)
-      final ext = 'mp4';
-      const mimeType = 'video/mp4';
-
-      final userId = await getCurrentUserId();
-      if (userId == null) {
+      final token = await getToken();
+      if (token == null) {
         return {'success': false, 'message': 'Non connecté — reconnecte-toi'};
       }
-
-      final fileName = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
 
       onStatus?.call('Upload en cours...');
       onProgress?.call(0);
 
+      // ── Envoi AU SERVEUR (clé admin côté serveur → contourne les règles du bucket) ──
+      final form = FormData.fromMap({
+        'title': title,
+        'description': description ?? '',
+        'zone': zone,
+        'tags': tags.join(','),
+        'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
+      });
+
       final dio = Dio();
-      Response<dynamic> dioRes;
+      Response<dynamic> res;
       try {
-        dioRes = await dio.post(
-          '${AppConfig.supabaseUrl}/storage/v1/object/${AppConfig.storageBucket}/$fileName',
-          data: Stream.fromIterable([bytes]),
+        res = await dio.post(
+          '${AppConfig.api}/api/videos/upload',
+          data: form,
           options: Options(
-            headers: {
-              'Authorization': 'Bearer ${AppConfig.supabaseAnonKey}',
-              'Content-Type': mimeType,
-              'Content-Length': '${bytes.length}',
-              'x-upsert': 'false',
-            },
+            headers: {'Authorization': 'Bearer $token'},
             sendTimeout: const Duration(minutes: 10),
-            receiveTimeout: const Duration(minutes: 2),
+            receiveTimeout: const Duration(minutes: 3),
+            // On gère nous-mêmes les codes d'erreur (pas d'exception sur 4xx/5xx)
+            validateStatus: (_) => true,
           ),
           onSendProgress: (sent, total) {
             if (total > 0) onProgress?.call((sent / total * 100).round());
           },
         );
       } on DioException catch (e) {
-        final msg = e.response?.data?.toString() ?? e.message ?? 'Erreur upload';
-        // ignore: avoid_print
-        print('[uploadVideo] Dio error: $msg');
-        return {'success': false, 'message': 'Stockage: $msg'};
-      }
-
-      if (dioRes.statusCode != 200 && dioRes.statusCode != 201) {
-        return {'success': false, 'message': 'Stockage: erreur ${dioRes.statusCode} — ${dioRes.data}'};
+        final data = e.response?.data;
+        final msg = (data is Map ? data['message'] : null) ?? e.message ?? 'Erreur réseau';
+        return {'success': false, 'message': msg.toString()};
       }
 
       onProgress?.call(100);
-      onStatus?.call('Enregistrement en base...');
 
-      final videoUrl = Supabase.instance.client.storage
-          .from(AppConfig.storageBucket)
-          .getPublicUrl(fileName);
+      final body = res.data;
+      final data = body is Map
+          ? Map<String, dynamic>.from(body)
+          : <String, dynamic>{'success': false, 'message': 'Réponse serveur invalide'};
 
-      final token = await getToken();
-      // ignore: avoid_print
-      print('[register] token present: ${token != null}, userId: $userId');
-
-      final res = await http.post(
-        Uri.parse('${AppConfig.api}/api/videos/register'),
-        headers: await _headers(auth: true),
-        body: jsonEncode({
-          'title': title,
-          'video_url': videoUrl,
-          'description': description ?? '',
-          'zone': zone,
-          'tags': tags,
-        }),
-      );
-      // ignore: avoid_print
-      print('[register] status=${res.statusCode} body=${res.body}');
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode != 200 && res.statusCode != 201) {
-        return {'success': false, 'message': 'Serveur: ${data['message'] ?? res.statusCode}'};
+        return {'success': false, 'message': data['message']?.toString() ?? 'Erreur ${res.statusCode}'};
       }
       return data;
     } catch (e) {
-      // ignore: avoid_print
-      print('[uploadVideo] ERREUR: $e');
       return {'success': false, 'message': e.toString()};
     }
   }
