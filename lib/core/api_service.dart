@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -12,8 +13,19 @@ class ApiService {
   static Future<void> saveToken(String token) => _storage.write(key: 'auth_token', value: token);
   static Future<void> clearToken() => _storage.delete(key: 'auth_token');
 
+  /// Identifiant d'appareil stable (anti-multi-comptes). Généré une fois puis stocké.
+  static Future<String> _deviceId() async {
+    var id = await _storage.read(key: 'device_id');
+    if (id == null || id.isEmpty) {
+      final rnd = Random.secure();
+      id = List.generate(32, (_) => rnd.nextInt(16).toRadixString(16)).join();
+      await _storage.write(key: 'device_id', value: id);
+    }
+    return id;
+  }
+
   static Future<Map<String, String>> _headers({bool auth = false}) async {
-    final h = {'Content-Type': 'application/json'};
+    final h = {'Content-Type': 'application/json', 'x-device-id': await _deviceId()};
     if (auth) {
       final token = await getToken();
       if (token != null) h['Authorization'] = 'Bearer $token';
@@ -499,6 +511,24 @@ class ApiService {
       Uri.parse('${AppConfig.api}/api/wallet/withdraw'),
       headers: await _headers(auth: true),
       body: jsonEncode({'amount': amount, 'phone': phone, 'operator': operator}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  // ── Monétisation (anti-multi-comptes) ────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getMonetizationStatus() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/monetization/status'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> requestMonetizationReview() async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/monetization/review-request'),
+      headers: await _headers(auth: true),
     );
     return jsonDecode(res.body);
   }

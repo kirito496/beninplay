@@ -166,6 +166,44 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
+  void _showBlockedDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Row(children: [
+          Icon(Icons.block, color: AppColors.error),
+          SizedBox(width: 8),
+          Text('Monétisation bloquée', style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: Text(
+          '$message\n\nRappel : un seul compte par personne peut générer de l\'argent. '
+          'Si tu penses qu\'il s\'agit d\'une erreur, demande une réexamination.',
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final r = await ApiService.requestMonetizationReview();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(r['message']?.toString() ?? 'Demande envoyée'),
+                backgroundColor: r['success'] == true ? AppColors.primary : AppColors.error,
+                duration: const Duration(seconds: 4),
+              ));
+            },
+            child: const Text('Demander une réexamination'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showWithdrawSheet(BuildContext context) {
     final amountCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -240,11 +278,14 @@ class _WalletScreenState extends State<WalletScreen> {
                   }
                   Navigator.pop(context);
                   final result = await ApiService.withdraw(amount: amount, phone: phone, operator: selectedMomo);
+                  if (!mounted) return;
                   if (result['success'] == true) {
                     await _loadWallet();
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Retrait en cours...'), backgroundColor: AppColors.primary, duration: const Duration(seconds: 4)));
+                  } else if (result['code'] == 'monetization_blocked') {
+                    _showBlockedDialog(result['message']?.toString() ?? 'Monétisation bloquée.');
                   } else {
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Erreur lors du retrait'), backgroundColor: AppColors.error));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Erreur lors du retrait'), backgroundColor: AppColors.error));
                   }
                 },
                 style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
