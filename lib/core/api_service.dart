@@ -591,6 +591,55 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Messagerie (REST ; le temps réel passe par ChatService/WebSocket) ──────
+
+  /// Liste de mes conversations → [{id, otherUser:{id,username,avatar_url}, updatedAt}]
+  static Future<List<Map<String, dynamic>>> getConversations() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/chat/conversations'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['conversations'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Ouvre (ou crée) une conversation avec un utilisateur → {conversationId, otherUser}
+  static Future<Map<String, dynamic>> openConversation(String userId) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/chat/conversations/$userId'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Messages d'une conversation (ordre chronologique)
+  static Future<List<Map<String, dynamic>>> getChatMessages(String cid, {int page = 1}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/chat/messages/$cid?page=$page&limit=50'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['messages'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Envoi d'un message par REST (repli si le WebSocket n'est pas connecté)
+  static Future<Map<String, dynamic>> sendChatMessage(String cid, String content) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/chat/messages/$cid'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'content': content, 'message_type': 'text'}),
+    );
+    return jsonDecode(res.body);
+  }
+
   // ── Statistiques créateur ─────────────────────────────────────────────────
 
   /// Tableau de bord chiffré du créateur connecté → { ...stats }
