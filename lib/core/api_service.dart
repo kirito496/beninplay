@@ -290,6 +290,7 @@ class ApiService {
     required String operator,
     String? videoId,
     String? liveId,
+    int? coins,
     String? targetRegion,
     List<String>? targetRegions,
     String? targetGender,
@@ -307,6 +308,7 @@ class ApiService {
         'operator': operator,
         if (videoId != null) 'videoId': videoId,
         if (liveId != null) 'liveId': liveId,
+        if (coins != null) 'coins': coins,
         if (targetRegion != null) 'targetRegion': targetRegion,
         if (targetRegions != null) 'targetRegions': targetRegions,
         if (targetGender != null) 'targetGender': targetGender,
@@ -589,6 +591,34 @@ class ApiService {
       headers: await _headers(auth: true),
     );
     return jsonDecode(res.body);
+  }
+
+  // ── Cadeaux / pièces ──────────────────────────────────────────────────────
+
+  /// Catalogue des stickers + paquets de pièces + mon solde
+  static Future<Map<String, dynamic>> getGiftCatalog() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/gifts/catalog'),
+        headers: await _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(jsonDecode(res.body));
+    } catch (_) {
+      return {'gifts': [], 'packs': [], 'coin_balance': 0};
+    }
+  }
+
+  static Future<int> getCoinBalance() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/gifts/balance'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['coin_balance'] is num) ? (data['coin_balance'] as num).toInt() : 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ── Messagerie (REST ; le temps réel passe par ChatService/WebSocket) ──────

@@ -6,6 +6,8 @@ import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/widgets/momo_pay_sheet.dart';
+import '../../services/chat_service.dart';
+import 'gift_sheet.dart';
 
 // ─── Liste des lives en cours (données réelles) ───────────────────────────────
 
@@ -174,6 +176,44 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   final _titleCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
 
+  final ChatService _chat = ChatService();
+  StreamSubscription? _chatSub;
+  final List<String> _comments = [];
+  final ScrollController _commentsScroll = ScrollController();
+  String? _flyingGift;
+
+  void _startChat() {
+    _chat.connect().then((_) {
+      if (_liveId != null) _chat.joinLive(_liveId!);
+    });
+    _chatSub = _chat.incoming.listen((d) {
+      if (!mounted || d['liveId'] != _liveId) return;
+      final type = d['type'];
+      if (type == 'live_comment') {
+        final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
+        _pushComment('@$from: ${d['content']}');
+      } else if (type == 'gift') {
+        final g = d['gift'] is Map ? d['gift'] : {};
+        final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
+        _pushComment('🎁 @$from a envoyé ${g['name']} ${g['emoji']}');
+        setState(() => _flyingGift = (g['emoji'] ?? '🎁').toString());
+        Future.delayed(const Duration(milliseconds: 1800), () {
+          if (mounted) setState(() => _flyingGift = null);
+        });
+      }
+    });
+  }
+
+  void _pushComment(String line) {
+    setState(() => _comments.add(line));
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (_commentsScroll.hasClients) {
+        _commentsScroll.animateTo(_commentsScroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      }
+    });
+  }
+
   Future<bool> _ensurePermissions() async {
     final statuses = await [Permission.camera, Permission.microphone].request();
     return statuses.values.every((s) => s.isGranted);
@@ -232,6 +272,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       );
       _engine = engine;
       setState(() { _isLive = true; _starting = false; });
+      _startChat(); // commentaires + cadeaux temps réel
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _duration++);
       });
@@ -264,9 +305,13 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _chatSub?.cancel();
+    if (_liveId != null) { try { _chat.leaveLive(_liveId!); } catch (_) {} }
+    _chat.dispose();
     _cleanup();
     _titleCtrl.dispose();
     _priceCtrl.dispose();
+    _commentsScroll.dispose();
     super.dispose();
   }
 
@@ -396,6 +441,35 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
             ]),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 24),
         ])),
+
+        // Commentaires + cadeaux des spectateurs (temps réel)
+        if (_isLive && _comments.isNotEmpty)
+          Positioned(
+            left: 12, right: 70, bottom: 120,
+            child: IgnorePointer(
+              child: SizedBox(
+                height: 200,
+                child: ListView.builder(
+                  controller: _commentsScroll,
+                  itemCount: _comments.length,
+                  itemBuilder: (_, i) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                        child: Text(_comments[i], style: const TextStyle(color: Colors.white, fontSize: 13)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (_flyingGift != null)
+          IgnorePointer(child: Center(child: Text(_flyingGift!, style: const TextStyle(fontSize: 120)))),
       ]),
     );
   }
@@ -450,11 +524,65 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
   final _scrollCtrl = ScrollController();
   final List<String> _comments = [];
 
+  final ChatService _chat = ChatService();
+  StreamSubscription? _chatSub;
+  bool _joinedRoom = false;
+  String? _flyingGift; // emoji du cadeau en cours d'animation
+
   @override
   void initState() {
     super.initState();
     _price = widget.price;
+    _chat.connect().then((_) => _maybeJoinRoom());
+    _chatSub = _chat.incoming.listen(_onLiveEvent);
     _join();
+  }
+
+  void _maybeJoinRoom() {
+    if (!_joinedRoom && _chat.isConnected) {
+      _chat.joinLive(widget.liveId);
+      _joinedRoom = true;
+    }
+  }
+
+  void _onLiveEvent(Map<String, dynamic> d) {
+    if (!mounted) return;
+    final type = d['type'];
+    if (type == 'live_comment' && d['liveId'] == widget.liveId) {
+      final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
+      _addComment('@$from: ${d['content']}');
+    } else if (type == 'gift' && d['liveId'] == widget.liveId) {
+      final g = d['gift'] is Map ? d['gift'] : {};
+      final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
+      _addComment('🎁 @$from a envoyé ${g['name']} ${g['emoji']}');
+      setState(() => _flyingGift = (g['emoji'] ?? '🎁').toString());
+      Future.delayed(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _flyingGift = null);
+      });
+    } else if (type == 'gift_error') {
+      final noCoins = d['code'] == 'no_coins';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(d['message']?.toString() ?? 'Erreur cadeau'),
+        backgroundColor: AppColors.error,
+        action: noCoins
+            ? SnackBarAction(label: 'Recharger', textColor: Colors.white, onPressed: _openGifts)
+            : null,
+      ));
+    }
+  }
+
+  void _addComment(String line) {
+    setState(() => _comments.add(line));
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      }
+    });
+  }
+
+  void _openGifts() {
+    GiftSheet.show(context, onSend: (giftKey) => _chat.sendGift(widget.liveId, giftKey));
   }
 
   Future<void> _pay() async {
@@ -525,18 +653,16 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
   void _send() {
     final t = _commentCtrl.text.trim();
     if (t.isEmpty) return;
-    setState(() => _comments.add('Moi: $t'));
+    _maybeJoinRoom();
+    _chat.sendLiveComment(widget.liveId, t); // le serveur nous renvoie l'écho
     _commentCtrl.clear();
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-      }
-    });
   }
 
   @override
   void dispose() {
+    _chatSub?.cancel();
+    try { _chat.leaveLive(widget.liveId); } catch (_) {}
+    _chat.dispose();
     _cleanup();
     _commentCtrl.dispose();
     _scrollCtrl.dispose();
@@ -650,9 +776,27 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
                     border: Border.all(color: AppColors.primary.withValues(alpha: 0.4))),
                 child: const Icon(Icons.send, color: AppColors.primary, size: 20),
               )),
+              const SizedBox(width: 8),
+              // Bouton cadeaux/stickers
+              GestureDetector(onTap: _openGifts, child: Container(
+                width: 42, height: 42,
+                decoration: const BoxDecoration(color: Color(0xFFFFC107), shape: BoxShape.circle),
+                child: const Icon(Icons.card_giftcard, color: Colors.black, size: 20),
+              )),
             ]),
           ),
         ])),
+
+        // Animation du cadeau reçu (emoji géant au centre)
+        if (_flyingGift != null)
+          IgnorePointer(
+            child: Center(
+              child: AnimatedScale(
+                scale: 1.0, duration: const Duration(milliseconds: 300),
+                child: Text(_flyingGift!, style: const TextStyle(fontSize: 120)),
+              ),
+            ),
+          ),
       ]),
     );
   }

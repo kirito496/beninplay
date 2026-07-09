@@ -22,6 +22,7 @@ class MomoPaySheet extends StatefulWidget {
   final String type;
   final String? videoId;
   final String? liveId;
+  final int? coins;
   final String description;
   final String? targetRegion;
   final List<String>? targetRegions;
@@ -37,6 +38,7 @@ class MomoPaySheet extends StatefulWidget {
     required this.type,
     this.videoId,
     this.liveId,
+    this.coins,
     required this.description,
     this.targetRegion,
     this.targetRegions,
@@ -54,6 +56,7 @@ class MomoPaySheet extends StatefulWidget {
     required String description,
     String? videoId,
     String? liveId,
+    int? coins,
     String? targetRegion,
     List<String>? targetRegions,
     String? targetGender,
@@ -75,6 +78,7 @@ class MomoPaySheet extends StatefulWidget {
         description: description,
         videoId: videoId,
         liveId: liveId,
+        coins: coins,
         targetRegion: targetRegion,
         targetRegions: targetRegions,
         targetGender: targetGender,
@@ -168,6 +172,7 @@ class _MomoPaySheetState extends State<MomoPaySheet>
         operator: _operator,
         videoId: widget.videoId,
         liveId: widget.liveId,
+        coins: widget.coins,
         targetRegion: widget.targetRegion,
         targetRegions: widget.targetRegions,
         targetGender: widget.targetGender,

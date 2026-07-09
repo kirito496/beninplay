@@ -111,6 +111,10 @@ class ChatService {
                   'mine': type == 'message_sent',
                 });
               }
+            } else if (type == 'live_comment' || type == 'gift' ||
+                type == 'gift_ok' || type == 'gift_error') {
+              // Événements de live (commentaires + cadeaux) transmis tels quels
+              _incoming.add(Map<String, dynamic>.from(d));
             }
           } catch (_) {}
         },
@@ -136,6 +140,18 @@ class ChatService {
     }));
     return true;
   }
+
+  // ── Live : salle de commentaires + cadeaux ────────────────────────────────
+  void _sendRaw(Map<String, dynamic> d) {
+    if (_connected && _socket != null) _socket!.add(jsonEncode(d));
+  }
+
+  void joinLive(String liveId) => _sendRaw({'type': 'join_live', 'liveId': liveId});
+  void leaveLive(String liveId) => _sendRaw({'type': 'leave_live', 'liveId': liveId});
+  void sendLiveComment(String liveId, String content) =>
+      _sendRaw({'type': 'live_comment', 'liveId': liveId, 'content': content});
+  void sendGift(String liveId, String giftKey) =>
+      _sendRaw({'type': 'live_gift', 'liveId': liveId, 'giftKey': giftKey});
 
   void dispose() {
     try { _socket?.close(); } catch (_) {}
