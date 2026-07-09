@@ -591,6 +591,23 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Statistiques créateur ─────────────────────────────────────────────────
+
+  /// Tableau de bord chiffré du créateur connecté → { ...stats }
+  static Future<Map<String, dynamic>> getCreatorStats() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/users/me/stats'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      if (data['stats'] is Map) return Map<String, dynamic>.from(data['stats']);
+      return {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   // ── Recherche & découverte ────────────────────────────────────────────────
 
   /// Recherche de vidéos par titre ou hashtag
