@@ -294,6 +294,28 @@ class ApiService {
     return list.whereType<Map<String, dynamic>>().toList();
   }
 
+  /// État d'accès à la Zone Dark : {kyc_status, subscribed, until, can_access}
+  static Future<Map<String, dynamic>> getDarkAccess() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/dark/access'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Soumet la vérification d'identité (+18) pour la Zone Dark.
+  static Future<Map<String, dynamic>> submitKyc({String? frontUrl, String? backUrl}) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/dark/kyc/submit'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({
+        if (frontUrl != null) 'front_url': frontUrl,
+        if (backUrl != null) 'back_url': backUrl,
+      }),
+    );
+    return jsonDecode(res.body);
+  }
+
   /// Feed INDÉPENDANT de la Zone Dark (+18). Ne renvoie que les vidéos dark.
   static Future<List<Map<String, dynamic>>> getDarkVideos({int page = 1}) async {
     final res = await http.get(
