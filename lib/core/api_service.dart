@@ -523,6 +523,45 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Live en direct (Agora) ────────────────────────────────────────────────
+
+  /// Démarre un live → renvoie {liveId, channel, appId, token} (rôle diffuseur)
+  static Future<Map<String, dynamic>> startLive(String title) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/live/start'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'title': title}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> stopLive(String liveId) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/live/$liveId/stop'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  static Future<List<Map<String, dynamic>>> getActiveLives() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/live/active'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['lives'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Jeton spectateur pour rejoindre un live → {channel, appId, token}
+  static Future<Map<String, dynamic>> getLiveToken(String liveId) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/live/$liveId/token'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
   // ── Monétisation (anti-multi-comptes) ────────────────────────────────────
 
   static Future<Map<String, dynamic>> getMonetizationStatus() async {
