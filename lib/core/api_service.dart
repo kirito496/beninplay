@@ -289,6 +289,7 @@ class ApiService {
     required String type,
     required String operator,
     String? videoId,
+    String? liveId,
     String? targetRegion,
     List<String>? targetRegions,
     String? targetGender,
@@ -305,6 +306,7 @@ class ApiService {
         'type': type,
         'operator': operator,
         if (videoId != null) 'videoId': videoId,
+        if (liveId != null) 'liveId': liveId,
         if (targetRegion != null) 'targetRegion': targetRegion,
         if (targetRegions != null) 'targetRegions': targetRegions,
         if (targetGender != null) 'targetGender': targetGender,
@@ -553,11 +555,11 @@ class ApiService {
   // ── Live en direct (Agora) ────────────────────────────────────────────────
 
   /// Démarre un live → renvoie {liveId, channel, appId, token} (rôle diffuseur)
-  static Future<Map<String, dynamic>> startLive(String title) async {
+  static Future<Map<String, dynamic>> startLive(String title, {int price = 0}) async {
     final res = await http.post(
       Uri.parse('${AppConfig.api}/api/live/start'),
       headers: await _headers(auth: true),
-      body: jsonEncode({'title': title}),
+      body: jsonEncode({'title': title, 'price': price}),
     );
     return jsonDecode(res.body);
   }

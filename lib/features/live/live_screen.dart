@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
+import '../../shared/widgets/momo_pay_sheet.dart';
 
 // ─── Liste des lives en cours (données réelles) ───────────────────────────────
 
@@ -78,12 +79,14 @@ class _LiveListScreenState extends State<LiveListScreen> {
                       itemBuilder: (_, i) {
                         final live = _lives[i];
                         final host = (live['host_name'] ?? 'Créateur').toString();
+                        final price = (live['price'] is num) ? (live['price'] as num).toInt() : 0;
                         return GestureDetector(
                           onTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => LiveViewerScreen(
                               liveId: live['id'].toString(),
                               hostName: host,
                               title: (live['title'] ?? 'Live').toString(),
+                              price: price,
                             ),
                           )),
                           child: Container(
@@ -97,6 +100,16 @@ class _LiveListScreenState extends State<LiveListScreen> {
                             child: Stack(children: [
                               const Center(child: Icon(Icons.live_tv, color: Colors.white24, size: 56)),
                               Positioned(top: 12, left: 12, child: _liveBadge()),
+                              if (price > 0)
+                                Positioned(top: 12, right: 12, child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(6)),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    const Icon(Icons.lock, color: Colors.black, size: 11),
+                                    const SizedBox(width: 3),
+                                    Text('$price F', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                                  ]),
+                                )),
                               Positioned(
                                 bottom: 12, left: 12, right: 12,
                                 child: Row(children: [
@@ -159,6 +172,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   Timer? _timer;
   String? _liveId;
   final _titleCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
 
   Future<bool> _ensurePermissions() async {
     final statuses = await [Permission.camera, Permission.microphone].request();
@@ -177,7 +191,12 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       _snack('Caméra et micro requis pour diffuser'); return;
     }
 
-    final res = await ApiService.startLive(_titleCtrl.text.trim());
+    final price = int.tryParse(_priceCtrl.text.trim()) ?? 0;
+    if (price > 0 && price < 100) {
+      setState(() => _starting = false);
+      _snack('Prix minimum : 100 FCFA (ou 0 pour gratuit)'); return;
+    }
+    final res = await ApiService.startLive(_titleCtrl.text.trim(), price: price < 0 ? 0 : price);
     if (!mounted) return;
     if (res['success'] != true) {
       setState(() => _starting = false);
@@ -247,6 +266,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     _timer?.cancel();
     _cleanup();
     _titleCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -325,6 +345,23 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                     contentPadding: const EdgeInsets.all(14),
                   ),
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _priceCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: 'Prix d\'entrée en FCFA (0 = gratuit)',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    prefixIcon: const Icon(Icons.lock_outline, color: Colors.white38, size: 20),
+                    filled: true, fillColor: Colors.black54,
+                    border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text('Laisse vide ou 0 pour un live gratuit. Sinon, seuls les spectateurs qui payent pourront entrer.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11)),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: _starting ? null : _startLive,
@@ -395,7 +432,8 @@ class LiveViewerScreen extends StatefulWidget {
   final String liveId;
   final String hostName;
   final String title;
-  const LiveViewerScreen({super.key, required this.liveId, required this.hostName, required this.title});
+  final int price;
+  const LiveViewerScreen({super.key, required this.liveId, required this.hostName, required this.title, this.price = 0});
 
   @override
   State<LiveViewerScreen> createState() => _LiveViewerScreenState();
@@ -406,6 +444,8 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
   int? _remoteUid;
   String? _channel;
   bool _ended = false;
+  bool _needPay = false;
+  int _price = 0;
   final _commentCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final List<String> _comments = [];
@@ -413,13 +453,36 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
   @override
   void initState() {
     super.initState();
+    _price = widget.price;
     _join();
+  }
+
+  Future<void> _pay() async {
+    final paid = await MomoPaySheet.show(
+      context,
+      amount: _price,
+      type: 'live',
+      description: 'Accès au live : ${widget.title}',
+      liveId: widget.liveId,
+    );
+    if (paid == true && mounted) {
+      setState(() => _needPay = false);
+      _join();
+    }
   }
 
   Future<void> _join() async {
     final res = await ApiService.getLiveToken(widget.liveId);
     if (!mounted) return;
     if (res['success'] != true) {
+      // Live payant non débloqué → on affiche l'écran de paiement
+      if (res['code'] == 'payment_required') {
+        setState(() {
+          _needPay = true;
+          _price = (res['price'] is num) ? (res['price'] as num).toInt() : _price;
+        });
+        return;
+      }
       setState(() => _ended = true); return;
     }
     _channel = res['channel']?.toString();
@@ -491,6 +554,35 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
             rtcEngine: _engine!,
             canvas: VideoCanvas(uid: _remoteUid),
             connection: RtcConnection(channelId: _channel),
+          ))
+        else if (_needPay)
+          Container(color: const Color(0xFF10101A), child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.lock_rounded, color: Colors.white, size: 56),
+                const SizedBox(height: 16),
+                Text(widget.title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('Live payant de @${widget.hostName}', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _pay,
+                  icon: const Icon(Icons.lock_open_rounded, size: 20, color: Colors.black),
+                  label: Text('Rejoindre pour $_price FCFA',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Paiement Mobile Money — accès à ce live en direct',
+                    style: TextStyle(color: Colors.white38, fontSize: 12), textAlign: TextAlign.center),
+              ]),
+            ),
           ))
         else
           Container(color: const Color(0xFF10101A), child: Center(
