@@ -97,6 +97,27 @@ class ApiService {
     } catch (_) {}
   }
 
+  /// Signale que la vidéo a été regardée jusqu'au bout (impact créateur)
+  static Future<void> markVideoCompleted(String videoId) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConfig.api}/api/videos/$videoId/complete'),
+        headers: await _headers(auth: true),
+      );
+    } catch (_) {}
+  }
+
+  /// Classement des créateurs par score d'impact
+  static Future<List<Map<String, dynamic>>> getLeaderboard({int limit = 50}) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/users/leaderboard?limit=$limit'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    final List<dynamic> list = data['creators'] ?? [];
+    return list.whereType<Map<String, dynamic>>().toList();
+  }
+
   static Future<Map<String, dynamic>> getVideos({int page = 1}) async {
     final res = await http.get(
       Uri.parse('${AppConfig.api}/api/videos?page=$page&limit=20'),

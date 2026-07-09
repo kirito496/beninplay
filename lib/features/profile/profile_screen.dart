@@ -12,6 +12,7 @@ import '../../shared/models/video_model.dart';
 import 'boost_screen.dart';
 import 'boosts_dashboard.dart';
 import '../dark_zone/dark_gate_screen.dart' as dark_gate;
+import '../discover/leaderboard_screen.dart';
 import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -1097,6 +1098,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.rocket_launch_outlined,
                     label: 'Mes boosts',
                     onTap: () => BoostsDashboard.show(context),
+                  ),
+                  _MenuItem(
+                    icon: Icons.leaderboard_outlined,
+                    label: 'Classement des créateurs',
+                    onTap: () => CreatorLeaderboard.show(context),
                   ),
                   _MenuItem(
                     icon: Icons.favorite_outline,

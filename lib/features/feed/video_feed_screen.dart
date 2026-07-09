@@ -557,6 +557,7 @@ class _VideoPageState extends State<_VideoPage> {
   bool _showPauseIcon = false;
   bool _isBuffering = false;
   bool _showDescription = false;
+  bool _reportedComplete = false;
 
   VideoPlayerController? get _ctrl => widget.controller;
   bool get _isInitialized => _ctrl?.value.isInitialized ?? false;
@@ -575,6 +576,16 @@ class _VideoPageState extends State<_VideoPage> {
     final buffering = _ctrl?.value.isBuffering ?? false;
     if (buffering != _isBuffering) {
       setState(() => _isBuffering = buffering);
+    }
+    // Vue "complétée" : regardée à ≥ 90% → signal d'impact créateur (une fois)
+    final val = _ctrl?.value;
+    if (!_reportedComplete && val != null && val.isInitialized &&
+        val.duration.inMilliseconds > 0 &&
+        val.position.inMilliseconds >= val.duration.inMilliseconds * 0.9) {
+      _reportedComplete = true;
+      if (widget.video.id != 'bee_fallback') {
+        ApiService.markVideoCompleted(widget.video.id);
+      }
     }
   }
 
