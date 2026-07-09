@@ -13,6 +13,7 @@ import 'boost_screen.dart';
 import 'boosts_dashboard.dart';
 import '../dark_zone/dark_gate_screen.dart' as dark_gate;
 import '../discover/leaderboard_screen.dart';
+import '../notifications/notifications_screen.dart';
 import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -40,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<VideoModel> _myVideos = [];
   List<VideoModel> _likedVideos = [];
   bool _loadingVideos = false;
+  int _unread = 0;
 
   final List<Map<String, dynamic>> _savedVideos = [];
 
@@ -50,6 +52,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadMyVideos();
     _loadLikedVideos();
     _loadCreatorStatus();
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    final n = await ApiService.getUnreadCount();
+    if (mounted) setState(() => _unread = n);
   }
 
   Future<void> _loadCreatorStatus() async {
@@ -1093,6 +1101,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Mes vidéos',
                     badge: statsVideos,
                     onTap: () => _showVideos('Mes vidéos', _myVideos.cast<dynamic>(), boostable: true),
+                  ),
+                  _MenuItem(
+                    icon: Icons.notifications_none,
+                    label: 'Notifications',
+                    badge: _unread > 0 ? '$_unread' : null,
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+                      _loadUnread();
+                    },
                   ),
                   _MenuItem(
                     icon: Icons.rocket_launch_outlined,

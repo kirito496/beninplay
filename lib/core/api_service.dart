@@ -591,6 +591,42 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Notifications ─────────────────────────────────────────────────────────
+
+  /// Mes notifications → {unread, notifications: [...]}
+  static Future<Map<String, dynamic>> getNotifications() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/notifications'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Juste le compteur de non-lues (pour le badge)
+  static Future<int> getUnreadCount() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/notifications/unread'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['unread'] is num) ? (data['unread'] as num).toInt() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Marque des notifications comme lues (toutes si ids == null)
+  static Future<void> markNotificationsRead({List<String>? ids}) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConfig.api}/api/notifications/read'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({if (ids != null) 'ids': ids}),
+      );
+    } catch (_) {}
+  }
+
   // ── Monétisation (anti-multi-comptes) ────────────────────────────────────
 
   static Future<Map<String, dynamic>> getMonetizationStatus() async {
