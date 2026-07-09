@@ -371,16 +371,43 @@ class ApiService {
   }
 
   /// Soumet la vérification d'identité (+18) pour la Zone Dark.
-  static Future<Map<String, dynamic>> submitKyc({String? frontUrl, String? backUrl}) async {
-    final res = await http.post(
-      Uri.parse('${AppConfig.api}/api/dark/kyc/submit'),
-      headers: await _headers(auth: true),
-      body: jsonEncode({
-        if (frontUrl != null) 'front_url': frontUrl,
-        if (backUrl != null) 'back_url': backUrl,
-      }),
-    );
-    return jsonDecode(res.body);
+  /// Envoie les photos de la pièce d'identité (recto + verso) au serveur.
+  /// [frontPath] est obligatoire, [backPath] recommandé.
+  static Future<Map<String, dynamic>> submitKyc({
+    required String frontPath,
+    String? backPath,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Non connecté — reconnecte-toi'};
+      }
+      final form = FormData.fromMap({
+        'front': await MultipartFile.fromFile(frontPath, filename: 'front.jpg'),
+        if (backPath != null)
+          'back': await MultipartFile.fromFile(backPath, filename: 'back.jpg'),
+      });
+      final dio = Dio();
+      final res = await dio.post(
+        '${AppConfig.api}/api/dark/kyc/submit',
+        data: form,
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          sendTimeout: const Duration(minutes: 3),
+          receiveTimeout: const Duration(minutes: 2),
+          validateStatus: (_) => true,
+        ),
+      );
+      final body = res.data;
+      if (body is Map) return Map<String, dynamic>.from(body);
+      return {'success': false, 'message': 'Réponse serveur invalide'};
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = (data is Map ? data['message'] : null) ?? e.message ?? 'Erreur réseau';
+      return {'success': false, 'message': msg.toString()};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
   }
 
   /// Feed INDÉPENDANT de la Zone Dark (+18). Ne renvoie que les vidéos dark.

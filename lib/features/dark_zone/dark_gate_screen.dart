@@ -181,7 +181,10 @@ class _KycStepState extends State<_KycStep> {
     }
 
     setState(() => _isLoading = true);
-    final res = await ApiService.submitKyc();
+    final res = await ApiService.submitKyc(
+      frontPath: _frontImage!.path,
+      backPath: _backImage!.path,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
     final ok = res['success'] == true;

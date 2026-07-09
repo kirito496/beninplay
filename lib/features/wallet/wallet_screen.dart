@@ -3,6 +3,7 @@ import '../../core/api_service.dart';
 import '../../core/biometric.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/algorithms/revenue_algorithm.dart';
+import '../kyc/kyc_verification_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -226,15 +227,12 @@ class _WalletScreenState extends State<WalletScreen> {
             child: const Text('Plus tard', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
-              final r = await ApiService.submitKyc();
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(r['message']?.toString() ?? 'Demande envoyée'),
-                backgroundColor: r['success'] == true ? AppColors.primary : AppColors.error,
-                duration: const Duration(seconds: 4),
-              ));
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const KycVerificationScreen()),
+              );
             },
             child: const Text('Vérifier mon identité'),
           ),
