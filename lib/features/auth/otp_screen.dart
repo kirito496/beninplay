@@ -6,9 +6,9 @@ import '../../core/constants/app_strings.dart';
 import '../home/home_screen.dart';
 
 class OtpScreen extends StatefulWidget {
-  final String phone;
+  final String email;
   final String? serverOtp;
-  const OtpScreen({super.key, required this.phone, this.serverOtp});
+  const OtpScreen({super.key, required this.email, this.serverOtp});
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -53,7 +53,7 @@ class _OtpScreenState extends State<OtpScreen> {
     if (_otpCode.length < 6) return;
     setState(() => _isLoading = true);
     try {
-      final result = await ApiService.verifyOtp(widget.phone, _otpCode);
+      final result = await ApiService.verifyEmailCode(widget.email, _otpCode);
       if (!mounted) return;
       setState(() => _isLoading = false);
       if (result['success'] == true) {
@@ -119,7 +119,7 @@ class _OtpScreenState extends State<OtpScreen> {
               const SizedBox(height: 8),
 
               Text(
-                'Vérification pour ${widget.phone}',
+                'Vérification pour ${widget.email}',
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
               ),
 

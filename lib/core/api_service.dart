@@ -65,6 +65,30 @@ class ApiService {
     return data;
   }
 
+  // ── Auth par email (Brevo) ────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> sendEmailCode(String email) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/auth/email/request'),
+      headers: await _headers(),
+      body: jsonEncode({'email': email}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> verifyEmailCode(String email, String code) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/auth/email/verify'),
+      headers: await _headers(),
+      body: jsonEncode({'email': email, 'code': code}),
+    );
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    if (data['success'] == true && data['token'] != null) {
+      await saveToken(data['token']);
+    }
+    return data;
+  }
+
   // ── Vidéos ──────────────────────────────────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> getMyVideos() async {
