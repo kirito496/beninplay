@@ -30,6 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String statsFollowing = '0';
   String statsLikes = '0';
   bool _isCreator = false;
+  String _creatorStatus = 'none'; // none | pending | approved | rejected
   String? _myRegion;
   String? _myGender;
   int? _myBirthYear;
@@ -47,6 +48,106 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadProfile();
     _loadMyVideos();
     _loadLikedVideos();
+    _loadCreatorStatus();
+  }
+
+  Future<void> _loadCreatorStatus() async {
+    try {
+      final data = await ApiService.getCreatorStatus();
+      if (!mounted) return;
+      setState(() {
+        _isCreator = data['is_creator'] == true;
+        _creatorStatus = data['status']?.toString() ?? 'none';
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _applyCreator() async {
+    final res = await ApiService.applyToBeCreator();
+    if (!mounted) return;
+    final ok = res['success'] == true;
+    if (ok) setState(() => _creatorStatus = 'pending');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (ok ? 'Demande envoyée' : 'Erreur')),
+        backgroundColor: ok ? AppColors.primary : AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Widget _buildCreatorCard() {
+    // Déjà créateur → badge doré
+    if (_isCreator) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [
+            const Color(0xFFF5A623).withValues(alpha: 0.25),
+            const Color(0xFFF5A623).withValues(alpha: 0.05),
+          ]),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFF5A623).withValues(alpha: 0.6)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.verified, color: Color(0xFFF5A623)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Créateur vérifié',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                  Text('Tu peux monétiser tes vidéos (gains, retraits)',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final pending = _creatorStatus == 'pending';
+    return GestureDetector(
+      onTap: pending ? null : _applyCreator,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: pending ? Colors.white10 : AppColors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: pending ? Colors.white24 : AppColors.primary.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(pending ? Icons.hourglass_top : Icons.workspace_premium,
+                color: pending ? Colors.white54 : AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pending ? 'Demande en cours d\'examen' : 'Devenir créateur de contenu',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  Text(
+                    pending
+                        ? 'Nous examinons ta demande (24-48 h)'
+                        : 'Débloque la monétisation : gains, retraits, tableau de bord',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (!pending)
+              const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadLikedVideos() async {
@@ -923,6 +1024,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ],
                   ),
+
+                  const SizedBox(height: 20),
+
+                  _buildCreatorCard(),
 
                   const SizedBox(height: 20),
 

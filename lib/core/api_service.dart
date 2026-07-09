@@ -380,6 +380,27 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Créateur (demande de monétisation) ───────────────────────────────────
+
+  /// Envoie une demande pour devenir créateur de contenu (validée par l'admin).
+  static Future<Map<String, dynamic>> applyToBeCreator({String? note}) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/auth/creator/apply'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'message': note ?? ''}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Statut de la demande créateur : {is_creator, status: none|pending|approved|rejected}
+  static Future<Map<String, dynamic>> getCreatorStatus() async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.api}/api/auth/creator/status'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
   // ── Profil ──────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getMyProfile() async {
