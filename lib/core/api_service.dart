@@ -591,6 +591,64 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  // ── Recherche & découverte ────────────────────────────────────────────────
+
+  /// Recherche de vidéos par titre ou hashtag
+  static Future<List<Map<String, dynamic>>> searchVideos(String q) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/videos/search?q=${Uri.encodeQueryComponent(q)}'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['videos'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Recherche de créateurs par pseudo
+  static Future<List<Map<String, dynamic>>> searchUsers(String q) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/users/search?q=${Uri.encodeQueryComponent(q)}'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['users'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Vidéos en tendance (les plus vues)
+  static Future<List<Map<String, dynamic>>> getTrending() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/videos/trending'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['videos'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Hashtags populaires → [{tag, count}]
+  static Future<List<Map<String, dynamic>>> getPopularTags() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/videos/popular-tags'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['tags'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Notifications ─────────────────────────────────────────────────────────
 
   /// Mes notifications → {unread, notifications: [...]}
