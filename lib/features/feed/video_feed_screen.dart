@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
+import '../../core/app_config.dart';
 import '../../core/screen_security.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
@@ -660,73 +662,21 @@ class _VideoPageState extends State<_VideoPage> {
   }
 
   void _share() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.normalSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Partager la vidéo',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _ShareOption(
-                  icon: Icons.link,
-                  label: 'Copier lien',
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: widget.video.videoUrl));
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Lien copié !'),
-                        backgroundColor: AppColors.primary,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                ),
-                _ShareOption(
-                  icon: Icons.chat,
-                  label: 'WhatsApp',
-                  color: const Color(0xFF25D366),
-                  onTap: () => Navigator.pop(context),
-                ),
-                _ShareOption(
-                  icon: Icons.facebook,
-                  label: 'Facebook',
-                  color: const Color(0xFF1877F2),
-                  onTap: () => Navigator.pop(context),
-                ),
-                _ShareOption(
-                  icon: Icons.send,
-                  label: 'Message',
-                  onTap: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
+    // ⚠️ Règle stricte : les vidéos de la Zone Dark ne sont JAMAIS partageables.
+    if (widget.video.isDark) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Les vidéos de la Zone Dark ne peuvent pas être partagées.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
         ),
-      ),
-    );
+      );
+      return;
+    }
+    // Lien d'aperçu web (ouvre une page avec miniature + accès à l'app)
+    final link = '${AppConfig.api}/v/${widget.video.id}';
+    final text = 'Regarde cette vidéo sur BeninPlay 🎬\n"${widget.video.title}"\n$link';
+    Share.share(text, subject: widget.video.title);
   }
 
   void _subscribe() {
@@ -1112,12 +1062,15 @@ class _VideoPageState extends State<_VideoPage> {
                 onTap: () => _showComments(context),
               ),
               const SizedBox(height: 18),
-              _ActionButton(
-                icon: Icons.share_outlined,
-                label: 'Partager',
-                onTap: _share,
-              ),
-              const SizedBox(height: 18),
+              // La Zone Dark n'est jamais partageable → pas de bouton Partager
+              if (!widget.video.isDark) ...[
+                _ActionButton(
+                  icon: Icons.share_outlined,
+                  label: 'Partager',
+                  onTap: _share,
+                ),
+                const SizedBox(height: 18),
+              ],
               _ActionButton(
                 icon: Icons.monetization_on_outlined,
                 label: 'Soutenir',
@@ -1357,43 +1310,6 @@ class _ActionButton extends StatelessWidget {
           Icon(icon, color: color, size: 30),
           const SizedBox(height: 3),
           Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShareOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ShareOption({
-    required this.icon,
-    required this.label,
-    this.color = Colors.white,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.3)),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
         ],
       ),
     );

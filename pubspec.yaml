@@ -59,6 +59,9 @@ dependencies:
   # Verrou biométrique (empreinte au retrait)
   local_auth: ^2.3.0
 
+  # Partage hors application (WhatsApp, Facebook…)
+  share_plus: ^7.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
