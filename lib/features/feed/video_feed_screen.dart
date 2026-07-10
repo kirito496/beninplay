@@ -104,8 +104,18 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _controllers.clear();
   }
 
-  // Initialise le contrôleur pour un index donné (avec cache disque)
-  Future<void> _initController(int index) async {
+  // ── Stratégie « toute la connexion pour LA vidéo affichée » ────────────────
+  // À chaque défilement, _pageGen change : tout chargement lancé pour une
+  // ancienne page devient périmé et est ABANDONNÉ immédiatement (le dispose
+  // coupe les téléchargements en cours). Défiler vite = zéro data gaspillée.
+  int _pageGen = 0;
+
+  bool _stale(int gen, int index) =>
+      !mounted || (gen != _pageGen && index != _currentIndex);
+
+  // Initialise le contrôleur pour un index donné (streaming + cache disque)
+  Future<void> _initController(int index, {int? gen}) async {
+    final g = gen ?? _pageGen;
     if (_controllers.containsKey(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
@@ -114,22 +124,19 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (widget.isDark) {
       // Zone Dark : lecture réseau directe, AUCUNE mise en cache sur le disque
       // → la vidéo n'est jamais stockée localement (non téléchargeable).
-      if (!mounted) return;
+      if (_stale(g, index)) return;
       ctrl = VideoPlayerController.networkUrl(
         Uri.parse(video.videoUrl),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } else {
-      // Zone normale : démarrage RAPIDE + économie de données.
-      // 1) Si la vidéo est déjà dans le cache disque → lecture instantanée, 0 data.
-      // 2) Sinon → lecture en STREAMING progressif : la vidéo démarre tout de
-      //    suite et on ne télécharge QUE ce qui est regardé (fini l'attente du
-      //    téléchargement complet, fini les données gaspillées).
+      // Zone normale : cache disque instantané sinon STREAMING progressif
+      // (la vidéo démarre tout de suite, on ne télécharge que ce qui est vu).
       FileInfo? cached;
       try {
         cached = await DefaultCacheManager().getFileFromCache(video.videoUrl);
       } catch (_) {}
-      if (!mounted) return;
+      if (_stale(g, index)) return; // zappée pendant la vérification du cache
       if (cached != null) {
         ctrl = VideoPlayerController.file(
           File(cached.file.path),
@@ -143,13 +150,16 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       }
     }
 
-    // Vérifie qu'on n'a pas été disposé pendant le téléchargement
-    if (!_controllers.containsKey(index) && (index - _currentIndex).abs() > 1) {
+    _controllers[index] = ctrl;
+    await ctrl.initialize();
+
+    // Zappée pendant l'initialisation → on coupe le téléchargement tout de suite
+    if (_stale(g, index) && (index - _currentIndex).abs() > 1) {
+      _controllers.remove(index);
       ctrl.dispose();
       return;
     }
-    _controllers[index] = ctrl;
-    await ctrl.initialize();
+
     ctrl.setLooping(true);
     if (index == _currentIndex && widget.isTabActive) {
       ctrl.play();
@@ -157,7 +167,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (mounted) setState(() {});
   }
 
-  // Nettoie les contrôleurs trop loin de l'index actuel (économise la RAM et le réseau)
+  // Nettoie les contrôleurs trop loin de l'index actuel : leur dispose()
+  // COUPE aussi leurs téléchargements en cours (bande passante libérée).
   void _cleanupControllers(int currentIdx) {
     final toRemove = _controllers.keys
         .where((i) => (i - currentIdx).abs() > 1)
@@ -168,32 +179,48 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
-  // Précharge la vidéo suivante seulement 2 s après le changement de page,
-  // et seulement si l'utilisateur est toujours sur la même vidéo.
+  // Précharge la vidéo suivante seulement 2 s après stabilisation :
+  // la vidéo regardée garde 100 % de la connexion pour démarrer.
   void _preloadNextSoon(int index) {
+    final g = _pageGen;
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted && _currentIndex == index) _initController(index + 1);
+      if (mounted && g == _pageGen && _currentIndex == index) {
+        _initController(index + 1, gen: g);
+      }
     });
   }
 
   void _onPageChanged(int index) {
+    _pageGen++; // périme tous les chargements des pages précédentes
+    final g = _pageGen;
+
     // Pause ancienne vidéo
     _controllers[_currentIndex]?.pause();
 
     setState(() => _currentIndex = index);
 
-    // Joue la nouvelle
-    _controllers[index]?.play();
+    // Nettoie d'abord : coupe les téléchargements des vidéos zappées
+    _cleanupControllers(index);
+
+    if (_controllers.containsKey(index)) {
+      // Déjà prête (préchargée) → lecture immédiate
+      _controllers[index]?.play();
+    } else {
+      // Anti-défilement-rapide : on attend 250 ms que l'utilisateur se pose
+      // sur la vidéo avant de charger quoi que ce soit. S'il continue à
+      // défiler, RIEN n'est téléchargé pour les vidéos survolées.
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (mounted && g == _pageGen && _currentIndex == index) {
+          _initController(index, gen: g);
+        }
+      });
+    }
 
     // Compte la vue
     _registerView(index);
 
-    // Précharge la suivante APRÈS un délai : toute la bande passante va
-    // d'abord à la vidéo en cours (démarrage plus rapide sur réseau lent).
+    // Précharge la suivante après stabilisation
     _preloadNextSoon(index);
-
-    // Nettoie les anciennes
-    _cleanupControllers(index);
 
     // Charge plus de vidéos si proche de la fin
     if (index >= _videos.length - 3) _loadVideos();
