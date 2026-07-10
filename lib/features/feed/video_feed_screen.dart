@@ -168,6 +168,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
+  // Précharge la vidéo suivante seulement 2 s après le changement de page,
+  // et seulement si l'utilisateur est toujours sur la même vidéo.
+  void _preloadNextSoon(int index) {
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && _currentIndex == index) _initController(index + 1);
+    });
+  }
+
   void _onPageChanged(int index) {
     // Pause ancienne vidéo
     _controllers[_currentIndex]?.pause();
@@ -180,8 +188,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // Compte la vue
     _registerView(index);
 
-    // Précharge la suivante
-    _initController(index + 1);
+    // Précharge la suivante APRÈS un délai : toute la bande passante va
+    // d'abord à la vidéo en cours (démarrage plus rapide sur réseau lent).
+    _preloadNextSoon(index);
 
     // Nettoie les anciennes
     _cleanupControllers(index);
@@ -260,9 +269,10 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
         }
       });
-      // Initialise la première vidéo + précharge la suivante
+      // Initialise la première vidéo en PRIORITÉ (toute la bande passante),
+      // la suivante se précharge 2 s plus tard.
       await _initController(_currentIndex);
-      await _initController(_currentIndex + 1);
+      _preloadNextSoon(_currentIndex);
       // Compte la vue de la première vidéo affichée
       _registerView(_currentIndex);
     } catch (e) {
