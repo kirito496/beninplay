@@ -8,6 +8,7 @@ class VideoModel {
   final String title;
   final String? description;
   final String videoUrl;
+  final String? hlsUrl; // version multi-qualités (adaptative à la connexion)
   final String? thumbnailUrl;
   final VideoZone zone;
   final int likes;
@@ -27,6 +28,7 @@ class VideoModel {
     required this.title,
     this.description,
     required this.videoUrl,
+    this.hlsUrl,
     this.thumbnailUrl,
     this.zone = VideoZone.normal,
     this.likes = 0,
@@ -42,6 +44,11 @@ class VideoModel {
   bool get isFree => price == 0;
   bool get isDark => zone == VideoZone.dark;
 
+  /// URL de lecture : la version adaptative (HLS, s'ajuste à la connexion)
+  /// quand elle existe, sinon le MP4 d'origine.
+  String get playbackUrl =>
+      (hlsUrl != null && hlsUrl!.isNotEmpty) ? hlsUrl! : videoUrl;
+
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',
     creatorId: json['creator_id'] ?? '',
@@ -50,6 +57,7 @@ class VideoModel {
     title: json['title'] ?? '',
     description: json['description'],
     videoUrl: json['video_url'] ?? '',
+    hlsUrl: json['hls_url'],
     thumbnailUrl: json['thumbnail_url'],
     zone: VideoZone.values.where((z) => z.name == (json['zone'] ?? 'normal')).firstOrNull ?? VideoZone.normal,
     likes: json['likes_count'] ?? json['likes'] ?? 0,

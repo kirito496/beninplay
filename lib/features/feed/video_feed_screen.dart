@@ -120,17 +120,29 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
 
+    // playbackUrl = version ADAPTATIVE (HLS 240p/480p, s'ajuste toute seule
+    // à la connexion du spectateur) quand elle existe, sinon MP4 en streaming.
+    final url = video.playbackUrl;
+    final isAdaptive = url != video.videoUrl;
+
     VideoPlayerController ctrl;
     if (widget.isDark) {
       // Zone Dark : lecture réseau directe, AUCUNE mise en cache sur le disque
       // → la vidéo n'est jamais stockée localement (non téléchargeable).
       if (_stale(g, index)) return;
       ctrl = VideoPlayerController.networkUrl(
-        Uri.parse(video.videoUrl),
+        Uri.parse(url),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+    } else if (isAdaptive) {
+      // HLS adaptatif : le lecteur gère lui-même qualité et mémoire tampon.
+      if (_stale(g, index)) return;
+      ctrl = VideoPlayerController.networkUrl(
+        Uri.parse(url),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } else {
-      // Zone normale : cache disque instantané sinon STREAMING progressif
+      // MP4 : cache disque instantané sinon STREAMING progressif
       // (la vidéo démarre tout de suite, on ne télécharge que ce qui est vu).
       FileInfo? cached;
       try {
