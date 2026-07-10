@@ -4,6 +4,7 @@ import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../home/home_screen.dart';
+import 'profile_setup_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String email;
@@ -57,9 +58,13 @@ class _OtpScreenState extends State<OtpScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       if (result['success'] == true) {
+        // Profil incomplet (nouveau compte ou infos manquantes) →
+        // écran de complétion avant d'entrer dans l'app.
+        final complete = result['profileComplete'] == true;
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(
+              builder: (_) => complete ? const HomeScreen() : const ProfileSetupScreen()),
               (_) => false,
         );
       } else {

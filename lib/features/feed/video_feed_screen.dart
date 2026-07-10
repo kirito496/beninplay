@@ -120,16 +120,22 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } else {
+      // Zone normale : démarrage RAPIDE + économie de données.
+      // 1) Si la vidéo est déjà dans le cache disque → lecture instantanée, 0 data.
+      // 2) Sinon → lecture en STREAMING progressif : la vidéo démarre tout de
+      //    suite et on ne télécharge QUE ce qui est regardé (fini l'attente du
+      //    téléchargement complet, fini les données gaspillées).
+      FileInfo? cached;
       try {
-        // Zone normale : cache disque (télécharge 1 seule fois, puis 0 data)
-        final fileInfo = await DefaultCacheManager().getSingleFile(video.videoUrl);
-        if (!mounted) return;
+        cached = await DefaultCacheManager().getFileFromCache(video.videoUrl);
+      } catch (_) {}
+      if (!mounted) return;
+      if (cached != null) {
         ctrl = VideoPlayerController.file(
-          File(fileInfo.path),
+          File(cached.file.path),
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
         );
-      } catch (_) {
-        if (!mounted) return;
+      } else {
         ctrl = VideoPlayerController.networkUrl(
           Uri.parse(video.videoUrl),
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),

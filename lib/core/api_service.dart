@@ -185,9 +185,11 @@ class ApiService {
       String uploadPath = filePath;
       try {
         onStatus?.call('Compression de la vidéo...');
+        // 480p : fichiers ~2-3x plus légers → chargement rapide et petite
+        // consommation de données pour tous les spectateurs.
         final info = await VideoCompress.compressVideo(
           filePath,
-          quality: VideoQuality.MediumQuality,
+          quality: VideoQuality.Res640x480Quality,
           deleteOrigin: false,
           includeAudio: true,
         );
@@ -477,6 +479,8 @@ class ApiService {
     String? bio,
     String? gender,
     int? birthYear,
+    String? fullName,
+    String? birthDate, // AAAA-MM-JJ
   }) async {
     final res = await http.put(
       Uri.parse('${AppConfig.api}/api/auth/profile'),
@@ -487,6 +491,8 @@ class ApiService {
         if (bio != null) 'bio': bio,
         if (gender != null) 'gender': gender,
         if (birthYear != null) 'birthYear': birthYear,
+        if (fullName != null) 'fullName': fullName,
+        if (birthDate != null) 'birthDate': birthDate,
       }),
     );
     return jsonDecode(res.body);
