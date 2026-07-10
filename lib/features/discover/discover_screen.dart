@@ -37,7 +37,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     setState(() => _loading = true);
     final results = await Future.wait([
       ApiService.getTrending(),
-      ApiService.getPopularTags(),
+      ApiService.getTrendingTags(),
     ]);
     if (!mounted) return;
     setState(() {

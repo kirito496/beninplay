@@ -753,8 +753,8 @@ class ApiService {
     }
   }
 
-  /// Hashtags populaires → [{tag, count}]
-  static Future<List<Map<String, dynamic>>> getPopularTags() async {
+  /// Hashtags populaires avec compteur → [{tag, count}] (page Découverte)
+  static Future<List<Map<String, dynamic>>> getTrendingTags() async {
     try {
       final res = await http.get(
         Uri.parse('${AppConfig.api}/api/videos/popular-tags'),
