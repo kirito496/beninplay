@@ -142,11 +142,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } else {
-      // MP4 : cache disque instantané sinon STREAMING progressif
-      // (la vidéo démarre tout de suite, on ne télécharge que ce qui est vu).
+      // MP4 : cache disque instantané sinon STREAMING progressif (via CDN si
+      // configuré). La vidéo démarre tout de suite, on ne télécharge que ce
+      // qui est regardé.
       FileInfo? cached;
       try {
-        cached = await DefaultCacheManager().getFileFromCache(video.videoUrl);
+        cached = await DefaultCacheManager().getFileFromCache(url);
       } catch (_) {}
       if (_stale(g, index)) return; // zappée pendant la vérification du cache
       if (cached != null) {
@@ -156,7 +157,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         );
       } else {
         ctrl = VideoPlayerController.networkUrl(
-          Uri.parse(video.videoUrl),
+          Uri.parse(url),
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
         );
       }

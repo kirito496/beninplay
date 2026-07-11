@@ -1,3 +1,5 @@
+import '../../core/app_config.dart';
+
 enum VideoZone { normal, dark }
 
 class VideoModel {
@@ -45,9 +47,12 @@ class VideoModel {
   bool get isDark => zone == VideoZone.dark;
 
   /// URL de lecture : la version adaptative (HLS, s'ajuste à la connexion)
-  /// quand elle existe, sinon le MP4 d'origine.
-  String get playbackUrl =>
-      (hlsUrl != null && hlsUrl!.isNotEmpty) ? hlsUrl! : videoUrl;
+  /// quand elle existe, sinon le MP4 d'origine — servie via le CDN (Lagos)
+  /// si configuré, pour un chargement rapide au Bénin.
+  String get playbackUrl {
+    final u = (hlsUrl != null && hlsUrl!.isNotEmpty) ? hlsUrl! : videoUrl;
+    return AppConfig.cdn(u);
+  }
 
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',
