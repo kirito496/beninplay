@@ -8,9 +8,9 @@ class AppConfig {
   static String get api => apiBaseUrl;
 
   // ── CDN Bunny.net (vidéos servies depuis Lagos, proche du Bénin) ──────────
-  // Vide = désactivé (lecture directe Supabase). Pull Zone Bunny.net
-  // (serveurs en Afrique / Lagos, proche du Bénin).
-  static const String cdnBase = 'https://beninplay.b-cdn.net';
+  // Vide = désactivé (lecture directe Supabase). Le CDN Bunny n'accélère
+  // qu'à partir d'un certain trafic (cache "chaud") ; prématuré pour l'instant.
+  static const String cdnBase = '';
 
   /// Fait passer une URL de fichier Supabase par le CDN (si configuré),
   /// sinon renvoie l'URL d'origine inchangée.
