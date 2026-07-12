@@ -47,6 +47,14 @@ final _fallbackVideo = VideoModel(
   createdAt: DateTime(2024),
 );
 
+// Cache disque dédié aux vidéos : garde jusqu'à 40 vidéos pendant 7 jours.
+// Une vidéo déjà téléchargée rejoue INSTANTANÉMENT, sans données, et même
+// hors connexion. Sert aussi à précharger les prochaines vidéos du feed.
+final _videoCache = CacheManager(
+  Config('beninplayVideoCache',
+      maxNrOfCacheObjects: 40, stalePeriod: const Duration(days: 7)),
+);
+
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   late final PageController _pageController;
   int _currentIndex = 0;
@@ -113,60 +121,78 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _stale(int gen, int index) =>
       !mounted || (gen != _pageGen && index != _currentIndex);
 
-  // Initialise le contrôleur pour un index donné (streaming + cache disque)
+  // Télécharge une vidéo dans le cache disque (en tâche de fond) pour qu'elle
+  // rejoue instantanément plus tard, même sans connexion. Non bloquant.
+  void _prefetchToCache(int index) {
+    if (widget.isDark) return; // la Zone Dark n'est jamais mise en cache
+    if (index < 0 || index >= _videos.length) return;
+    final v = _videos[index];
+    if (v.id == 'bee_fallback' || v.isLocked) return; // ni accueil ni vidéo verrouillée
+    final url = v.playbackUrl;
+    if (url != v.videoUrl) return; // HLS : pas de cache fichier
+    () async {
+      try {
+        final info = await _videoCache.getFileFromCache(url);
+        if (info == null) await _videoCache.downloadFile(url);
+      } catch (_) {}
+    }();
+  }
+
+  // Précharge dans le cache les prochaines vidéos du feed (jusqu'à ~5 gardées).
+  void _prefetchWindow(int center) {
+    for (var i = center + 1; i <= center + 3; i++) {
+      _prefetchToCache(i);
+    }
+  }
+
+  // Initialise le contrôleur pour un index donné.
+  // MP4 : joue depuis le CACHE DISQUE si dispo (instantané, hors ligne),
+  //       sinon streaming + mise en cache en tâche de fond pour la prochaine fois.
   Future<void> _initController(int index, {int? gen}) async {
     final g = gen ?? _pageGen;
     if (_controllers.containsKey(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
 
-    // playbackUrl = version ADAPTATIVE (HLS 240p/480p, s'ajuste toute seule
-    // à la connexion du spectateur) quand elle existe, sinon MP4 en streaming.
     final url = video.playbackUrl;
-    final isAdaptive = url != video.videoUrl;
+    final isAdaptive = url != video.videoUrl; // HLS
 
     VideoPlayerController ctrl;
-    if (widget.isDark) {
-      // Zone Dark : lecture réseau directe, AUCUNE mise en cache sur le disque
-      // → la vidéo n'est jamais stockée localement (non téléchargeable).
-      if (_stale(g, index)) return;
-      ctrl = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-      );
-    } else if (isAdaptive) {
-      // HLS adaptatif : le lecteur gère lui-même qualité et mémoire tampon.
+    if (widget.isDark || isAdaptive) {
+      // Zone Dark (jamais stockée) ou HLS adaptatif (géré par le lecteur) :
+      // lecture réseau directe.
       if (_stale(g, index)) return;
       ctrl = VideoPlayerController.networkUrl(
         Uri.parse(url),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } else {
-      // MP4 : cache disque instantané sinon STREAMING progressif (via CDN si
-      // configuré). La vidéo démarre tout de suite, on ne télécharge que ce
-      // qui est regardé.
+      // MP4 : déjà en cache ? → lecture instantanée depuis le fichier local.
       FileInfo? cached;
       try {
-        cached = await DefaultCacheManager().getFileFromCache(url);
+        cached = await _videoCache.getFileFromCache(url);
       } catch (_) {}
-      if (_stale(g, index)) return; // zappée pendant la vérification du cache
+      if (_stale(g, index)) return;
       if (cached != null) {
         ctrl = VideoPlayerController.file(
-          File(cached.file.path),
+          cached.file,
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
         );
       } else {
+        // Pas encore en cache : streaming pour démarrer vite, ET on télécharge
+        // en fond pour que la PROCHAINE lecture soit instantanée / hors ligne.
         ctrl = VideoPlayerController.networkUrl(
           Uri.parse(url),
           videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
         );
+        _prefetchToCache(index);
       }
     }
 
     _controllers[index] = ctrl;
     await ctrl.initialize();
 
-    // Zappée pendant l'initialisation → on coupe le téléchargement tout de suite
+    // Zappée pendant l'initialisation → on coupe et libère
     if (_stale(g, index) && (index - _currentIndex).abs() > 1) {
       _controllers.remove(index);
       ctrl.dispose();
@@ -192,13 +218,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
-  // Précharge la vidéo suivante seulement 2 s après stabilisation :
-  // la vidéo regardée garde 100 % de la connexion pour démarrer.
+  // Après stabilisation : prépare la vidéo suivante (contrôleur prêt) + met en
+  // cache les 3 suivantes en tâche de fond → swipes instantanés et hors ligne.
   void _preloadNextSoon(int index) {
     final g = _pageGen;
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(milliseconds: 900), () {
       if (mounted && g == _pageGen && _currentIndex == index) {
         _initController(index + 1, gen: g);
+        _prefetchWindow(index);
       }
     });
   }
@@ -309,8 +336,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
         }
       });
-      // Initialise la première vidéo en PRIORITÉ (toute la bande passante),
-      // la suivante se précharge 2 s plus tard.
+      // Première vidéo en priorité, puis préparation + mise en cache des suivantes.
       await _initController(_currentIndex);
       _preloadNextSoon(_currentIndex);
       // Compte la vue de la première vidéo affichée
