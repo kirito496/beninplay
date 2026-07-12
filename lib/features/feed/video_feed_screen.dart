@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter_video_caching/flutter_video_caching.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
@@ -45,14 +45,6 @@ final _fallbackVideo = VideoModel(
   videoUrl: _beeVideoUrl,
   zone: VideoZone.normal,
   createdAt: DateTime(2024),
-);
-
-// Cache disque dédié aux vidéos : garde jusqu'à 40 vidéos pendant 7 jours.
-// Une vidéo déjà téléchargée rejoue INSTANTANÉMENT, sans données, et même
-// hors connexion. Sert aussi à précharger les prochaines vidéos du feed.
-final _videoCache = CacheManager(
-  Config('beninplayVideoCache',
-      maxNrOfCacheObjects: 40, stalePeriod: const Duration(days: 7)),
 );
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
@@ -121,21 +113,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _stale(int gen, int index) =>
       !mounted || (gen != _pageGen && index != _currentIndex);
 
-  // Télécharge une vidéo dans le cache disque (en tâche de fond) pour qu'elle
+  // Met une vidéo en cache en tâche de fond (via le proxy) pour qu'elle
   // rejoue instantanément plus tard, même sans connexion. Non bloquant.
   void _prefetchToCache(int index) {
     if (widget.isDark) return; // la Zone Dark n'est jamais mise en cache
     if (index < 0 || index >= _videos.length) return;
     final v = _videos[index];
     if (v.id == 'bee_fallback' || v.isLocked) return; // ni accueil ni vidéo verrouillée
-    final url = v.playbackUrl;
-    if (url != v.videoUrl) return; // HLS : pas de cache fichier
-    () async {
-      try {
-        final info = await _videoCache.getFileFromCache(url);
-        if (info == null) await _videoCache.downloadFile(url);
-      } catch (_) {}
-    }();
+    try { VideoCaching.precache(v.playbackUrl); } catch (_) {}
   }
 
   // Précharge dans le cache les prochaines vidéos du feed (jusqu'à ~5 gardées).
@@ -145,49 +130,25 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
-  // Initialise le contrôleur pour un index donné.
-  // MP4 : joue depuis le CACHE DISQUE si dispo (instantané, hors ligne),
-  //       sinon streaming + mise en cache en tâche de fond pour la prochaine fois.
+  // Initialise le contrôleur pour un index donné. Hors Zone Dark, la lecture
+  // passe par le proxy local : streaming immédiat ET mise en cache simultanée
+  // (rejoue instantané et hors ligne ensuite).
   Future<void> _initController(int index, {int? gen}) async {
     final g = gen ?? _pageGen;
     if (_controllers.containsKey(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
 
+    if (_stale(g, index)) return;
     final url = video.playbackUrl;
-    final isAdaptive = url != video.videoUrl; // HLS
 
-    VideoPlayerController ctrl;
-    if (widget.isDark || isAdaptive) {
-      // Zone Dark (jamais stockée) ou HLS adaptatif (géré par le lecteur) :
-      // lecture réseau directe.
-      if (_stale(g, index)) return;
-      ctrl = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-      );
-    } else {
-      // MP4 : déjà en cache ? → lecture instantanée depuis le fichier local.
-      FileInfo? cached;
-      try {
-        cached = await _videoCache.getFileFromCache(url);
-      } catch (_) {}
-      if (_stale(g, index)) return;
-      if (cached != null) {
-        ctrl = VideoPlayerController.file(
-          cached.file,
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-        );
-      } else {
-        // Pas encore en cache : streaming pour démarrer vite, ET on télécharge
-        // en fond pour que la PROCHAINE lecture soit instantanée / hors ligne.
-        ctrl = VideoPlayerController.networkUrl(
-          Uri.parse(url),
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-        );
-        _prefetchToCache(index);
-      }
-    }
+    // Zone Dark : lecture réseau directe, JAMAIS mise en cache (non téléchargeable).
+    // Ailleurs : on passe par le proxy local (toLocalUri) qui lit ET met en
+    // cache en même temps (MP4 et HLS) → démarrage rapide + rejoue instantané.
+    final ctrl = VideoPlayerController.networkUrl(
+      widget.isDark ? Uri.parse(url) : url.toLocalUri(),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+    );
 
     _controllers[index] = ctrl;
     await ctrl.initialize();
