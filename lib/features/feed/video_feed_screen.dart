@@ -802,12 +802,17 @@ class _VideoPageState extends State<_VideoPage> {
           child: Container(
             color: Colors.black,
             child: _isInitialized && _ctrl != null
-                ? FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _ctrl!.value.size.width,
-                height: _ctrl!.value.size.height,
-                child: VideoPlayer(_ctrl!),
+                ? SizedBox.expand(
+              child: FittedBox(
+                // Vidéo verticale (aspect < 1) → remplit tout l'écran (plein cadre).
+                // Vidéo horizontale → affichée en entier, sans couper le contenu.
+                fit: _ctrl!.value.aspectRatio < 1.0 ? BoxFit.cover : BoxFit.contain,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: _ctrl!.value.size.width,
+                  height: _ctrl!.value.size.height,
+                  child: VideoPlayer(_ctrl!),
+                ),
               ),
             )
                 : const Center(
