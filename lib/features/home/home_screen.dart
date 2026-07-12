@@ -12,6 +12,8 @@ import '../profile/profile_screen.dart';
 import '../discover/discover_screen.dart' show DiscoverScreen;
 import '../messages/messages_screen.dart';
 import '../live/live_screen.dart';
+import '../upload/video_editor_screen.dart';
+import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,8 +51,17 @@ class _HomeScreenState extends State<HomeScreen> {
         maxDuration: const Duration(minutes: 3),
       );
       if (video == null) { return; }
+      if (!mounted) return;
+      // Étape d'édition "façon Snapchat" (filtres, texte, emojis) avant publication.
+      final edit = await Navigator.push<EditResult>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VideoEditorScreen(videoFile: File(video.path)),
+        ),
+      );
+      if (edit == null) return; // l'utilisateur a annulé l'édition
       if (mounted) {
-        _showPublishForm(File(video.path));
+        _showPublishForm(File(video.path), edit);
       }
     } catch (e) {
       if (mounted) {
@@ -145,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showPublishForm(File videoFile) {
+  void _showPublishForm(File videoFile, EditResult edit) {
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
@@ -404,6 +415,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       zone: selectedZone,
                       price: int.tryParse(priceCtrl.text.trim()) ?? 0,
                       tags: tags,
+                      filter: edit.filter,
+                      overlays: edit.overlays.isEmpty
+                          ? null
+                          : jsonEncode(edit.overlays.map((o) => o.toJson()).toList()),
                     ).then((res) {
                       if (!mounted) return null;
                       if (res['success'] == true) {

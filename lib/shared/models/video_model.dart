@@ -1,4 +1,6 @@
+import 'dart:convert';
 import '../../core/app_config.dart';
+import '../../features/upload/video_effects.dart';
 
 enum VideoZone { normal, dark }
 
@@ -20,6 +22,8 @@ class VideoModel {
   final bool isBoosted;
   final double price; // 0 = gratuit
   final bool isLocked; // vidéo payante non encore achetée par le spectateur
+  final String? filter; // filtre couleur "façon Snapchat" (nom), null = aucun
+  final List<VideoOverlayItem> overlays; // textes/emojis posés sur la vidéo
   final DateTime createdAt;
 
   const VideoModel({
@@ -40,6 +44,8 @@ class VideoModel {
     this.isBoosted = false,
     this.price = 0,
     this.isLocked = false,
+    this.filter,
+    this.overlays = const [],
     required this.createdAt,
   });
 
@@ -72,8 +78,25 @@ class VideoModel {
     isBoosted: json['is_boosted'] ?? false,
     price: (json['price'] ?? 0).toDouble(),
     isLocked: json['is_locked'] == true,
+    filter: json['filter'],
+    overlays: _parseOverlays(json['overlays']),
     createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
   );
+
+  /// `overlays` peut arriver en JSON (String) ou déjà décodé (List).
+  static List<VideoOverlayItem> _parseOverlays(dynamic raw) {
+    if (raw == null) return const [];
+    try {
+      final list = raw is String ? jsonDecode(raw) : raw;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => VideoOverlayItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
 
   // Données fictives pour les tests
   static List<VideoModel> get mockNormal => List.generate(

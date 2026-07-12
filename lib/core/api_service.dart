@@ -177,6 +177,8 @@ class ApiService {
     String zone = 'normal',
     int price = 0,
     List<String> tags = const [],
+    String? filter, // filtre couleur (métadonnée, ré-appliqué à la lecture)
+    String? overlays, // JSON des textes/emojis posés sur la vidéo
     void Function(String)? onStatus,
     void Function(int percent)? onProgress,
   }) async {
@@ -215,6 +217,8 @@ class ApiService {
         'zone': zone,
         'price': '$price',
         'tags': tags.join(','),
+        if (filter != null && filter.isNotEmpty) 'filter': filter,
+        if (overlays != null && overlays.isNotEmpty) 'overlays': overlays,
         'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
       });
 

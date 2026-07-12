@@ -12,6 +12,7 @@ import '../../shared/models/video_model.dart';
 import '../../shared/widgets/momo_pay_sheet.dart';
 import '../../shared/widgets/tip_sheet.dart';
 import '../profile/creator_profile_screen.dart';
+import '../upload/video_effects.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -802,19 +803,35 @@ class _VideoPageState extends State<_VideoPage> {
           child: Container(
             color: Colors.black,
             child: _isInitialized && _ctrl != null
-                ? SizedBox.expand(
-              child: FittedBox(
-                // Vidéo verticale (aspect < 1) → remplit tout l'écran (plein cadre).
-                // Vidéo horizontale → affichée en entier, sans couper le contenu.
-                fit: _ctrl!.value.aspectRatio < 1.0 ? BoxFit.cover : BoxFit.contain,
-                clipBehavior: Clip.hardEdge,
-                child: SizedBox(
-                  width: _ctrl!.value.size.width,
-                  height: _ctrl!.value.size.height,
-                  child: VideoPlayer(_ctrl!),
-                ),
-              ),
-            )
+                ? LayoutBuilder(builder: (context, cts) {
+                    final area = Size(cts.maxWidth, cts.maxHeight);
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Filtre couleur "façon Snapchat" appliqué à la lecture.
+                        VideoFilters.apply(
+                          widget.video.filter,
+                          SizedBox.expand(
+                            child: FittedBox(
+                              // Vidéo verticale (aspect < 1) → remplit tout l'écran.
+                              // Vidéo horizontale → affichée en entier, sans couper.
+                              fit: _ctrl!.value.aspectRatio < 1.0
+                                  ? BoxFit.cover
+                                  : BoxFit.contain,
+                              clipBehavior: Clip.hardEdge,
+                              child: SizedBox(
+                                width: _ctrl!.value.size.width,
+                                height: _ctrl!.value.size.height,
+                                child: VideoPlayer(_ctrl!),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Textes / emojis posés lors de l'édition.
+                        OverlayLayer(items: widget.video.overlays, size: area),
+                      ],
+                    );
+                  })
                 : const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             ),
