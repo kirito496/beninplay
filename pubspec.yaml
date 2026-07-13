@@ -62,10 +62,6 @@ dependencies:
   # Partage hors application (WhatsApp, Facebook…)
   share_plus: ^7.2.2
 
-  # Lecture + mise en cache simultanée des vidéos (proxy local)
-  # → démarrage rapide, rejoue instantané, hors ligne, cache MP4 et HLS
-  flutter_video_caching: ^1.1.5
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter_video_caching/flutter_video_caching.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
@@ -114,27 +113,15 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _stale(int gen, int index) =>
       !mounted || (gen != _pageGen && index != _currentIndex);
 
-  // Met une vidéo en cache en tâche de fond (via le proxy) pour qu'elle
-  // rejoue instantanément plus tard, même sans connexion. Non bloquant.
-  void _prefetchToCache(int index) {
-    if (widget.isDark) return; // la Zone Dark n'est jamais mise en cache
-    if (index < 0 || index >= _videos.length) return;
-    final v = _videos[index];
-    if (v.id == 'bee_fallback' || v.isLocked) return; // ni accueil ni vidéo verrouillée
-    try { VideoCaching.precache(v.playbackUrl); } catch (_) {}
-  }
-
-  // Précharge dans le cache les prochaines vidéos du feed (jusqu'à ~5 gardées).
-  void _prefetchWindow(int center) {
-    for (var i = center + 1; i <= center + 3; i++) {
-      _prefetchToCache(i);
-    }
-  }
-
-  // Initialise le contrôleur pour un index donné. Hors Zone Dark, la lecture
-  // passe par le proxy local : streaming immédiat ET mise en cache simultanée
-  // (rejoue instantané et hors ligne ensuite).
-  Future<void> _initController(int index, {int? gen}) async {
+  // Initialise le contrôleur pour un index donné.
+  //
+  // Lecture réseau DIRECTE (streaming progressif d'ExoPlayer) → la première
+  // image s'affiche le plus vite possible. Aucun proxy intermédiaire.
+  //
+  // [allowPreload] : quand c'est la vidéo AFFICHÉE, on ne prépare la suivante
+  // QU'UNE FOIS celle-ci prête — pour que toute la connexion aille d'abord à
+  // la vidéo que l'utilisateur regarde (et pas aux suivantes en même temps).
+  Future<void> _initController(int index, {int? gen, bool allowPreload = true}) async {
     final g = gen ?? _pageGen;
     if (_controllers.containsKey(index)) return;
     if (index < 0 || index >= _videos.length) return;
@@ -143,11 +130,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (_stale(g, index)) return;
     final url = video.playbackUrl;
 
-    // Zone Dark : lecture réseau directe, JAMAIS mise en cache (non téléchargeable).
-    // Ailleurs : on passe par le proxy local (toLocalUri) qui lit ET met en
-    // cache en même temps (MP4 et HLS) → démarrage rapide + rejoue instantané.
     final ctrl = VideoPlayerController.networkUrl(
-      widget.isDark ? Uri.parse(url) : url.toLocalUri(),
+      Uri.parse(url),
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
     );
 
@@ -166,6 +150,19 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       ctrl.play();
     }
     if (mounted) setState(() {});
+
+    // La vidéo affichée est prête → SEULEMENT MAINTENANT on précharge la
+    // suivante (une seule), pour un swipe instantané sans ralentir l'actuelle.
+    if (allowPreload && index == _currentIndex && g == _pageGen) {
+      _initController(index + 1, gen: g, allowPreload: false);
+    }
+  }
+
+  // Précharge la vidéo suivante (contrôleur en mémoire) sans cascader.
+  void _preloadNext(int index, int gen) {
+    if (mounted && gen == _pageGen && _currentIndex == index) {
+      _initController(index + 1, gen: gen, allowPreload: false);
+    }
   }
 
   // Nettoie les contrôleurs trop loin de l'index actuel : leur dispose()
@@ -178,18 +175,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       _controllers[i]?.dispose();
       _controllers.remove(i);
     }
-  }
-
-  // Après stabilisation : prépare la vidéo suivante (contrôleur prêt) + met en
-  // cache les 3 suivantes en tâche de fond → swipes instantanés et hors ligne.
-  void _preloadNextSoon(int index) {
-    final g = _pageGen;
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted && g == _pageGen && _currentIndex == index) {
-        _initController(index + 1, gen: g);
-        _prefetchWindow(index);
-      }
-    });
   }
 
   void _onPageChanged(int index) {
@@ -205,8 +190,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _cleanupControllers(index);
 
     if (_controllers.containsKey(index)) {
-      // Déjà prête (préchargée) → lecture immédiate
+      // Déjà prête (préchargée) → lecture immédiate, puis on prépare la suivante
       _controllers[index]?.play();
+      _preloadNext(index, g);
     } else {
       // Anti-défilement-rapide : on attend 250 ms que l'utilisateur se pose
       // sur la vidéo avant de charger quoi que ce soit. S'il continue à
@@ -221,8 +207,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // Compte la vue
     _registerView(index);
 
-    // Précharge la suivante après stabilisation
-    _preloadNextSoon(index);
+    // (La vidéo suivante est préchargée automatiquement une fois l'actuelle prête.)
 
     // Charge plus de vidéos si proche de la fin
     if (index >= _videos.length - 3) _loadVideos();
@@ -298,9 +283,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
         }
       });
-      // Première vidéo en priorité, puis préparation + mise en cache des suivantes.
+      // Première vidéo en priorité ; la suivante se prépare une fois celle-ci prête.
       await _initController(_currentIndex);
-      _preloadNextSoon(_currentIndex);
       // Compte la vue de la première vidéo affichée
       _registerView(_currentIndex);
     } catch (e) {

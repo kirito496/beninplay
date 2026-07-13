@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_video_caching/flutter_video_caching.dart';
 import 'core/app_config.dart';
 import 'core/api_service.dart';
 import 'core/theme/app_theme.dart';
@@ -10,8 +9,6 @@ import 'features/home/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Proxy local de mise en cache vidéo (lecture + cache simultanés)
-  VideoProxy.init();
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
     anonKey: AppConfig.supabaseAnonKey,
