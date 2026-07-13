@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
@@ -816,9 +817,28 @@ class _VideoPageState extends State<_VideoPage> {
                       ],
                     );
                   })
-                : const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Miniature affichée INSTANTANÉMENT pendant que la
+                      // vidéo charge (comme TikTok) — fini l'écran noir.
+                      if (widget.video.thumbnailUrl != null &&
+                          widget.video.thumbnailUrl!.isNotEmpty)
+                        VideoFilters.apply(
+                          widget.video.filter,
+                          CachedNetworkImage(
+                            imageUrl: widget.video.thumbnailUrl!,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 80),
+                            errorWidget: (_, __, ___) => const SizedBox(),
+                          ),
+                        ),
+                      const Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.primary, strokeWidth: 2.5),
+                      ),
+                    ],
+                  ),
           ),
         ),
 

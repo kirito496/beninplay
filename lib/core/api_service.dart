@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_compress/video_compress.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'app_config.dart';
 
 class ApiService {
@@ -202,6 +203,19 @@ class ApiService {
         uploadPath = filePath;
       }
 
+      // ── Miniature : image affichée INSTANTANÉMENT dans le fil pendant que
+      // la vidéo charge (comme TikTok) → sensation de rapidité immédiate.
+      String? thumbPath;
+      try {
+        onStatus?.call('Création de la miniature...');
+        thumbPath = await VideoThumbnail.thumbnailFile(
+          video: uploadPath,
+          imageFormat: ImageFormat.JPEG,
+          maxWidth: 480,
+          quality: 70,
+        );
+      } catch (_) { /* sans miniature : pas bloquant */ }
+
       final token = await getToken();
       if (token == null) {
         return {'success': false, 'message': 'Non connecté — reconnecte-toi'};
@@ -220,6 +234,8 @@ class ApiService {
         if (filter != null && filter.isNotEmpty) 'filter': filter,
         if (overlays != null && overlays.isNotEmpty) 'overlays': overlays,
         'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
+        if (thumbPath != null)
+          'thumbnail': await MultipartFile.fromFile(thumbPath, filename: 'thumb.jpg'),
       });
 
       final dio = Dio();
