@@ -878,18 +878,4 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
-  // ── Boost ───────────────────────────────────────────────────────────────────
-
-  static Future<Map<String, dynamic>> createBoost({
-    required String videoId,
-    required int amount,
-    required int days,
-  }) async {
-    final res = await http.post(
-      Uri.parse('${AppConfig.api}/api/boost'),
-      headers: await _headers(auth: true),
-      body: jsonEncode({'video_id': videoId, 'amount': amount, 'days': days}),
-    );
-    return jsonDecode(res.body);
-  }
 }
