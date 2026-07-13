@@ -5,7 +5,9 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_service.dart';
+import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/benin_regions.dart';
 import '../../shared/models/video_model.dart';
@@ -906,6 +908,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Pages légales publiques (hébergées sur l'API)
+  void _openLegal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.gavel, color: Colors.white70),
+              title: const Text("Conditions générales d'utilisation",
+                  style: TextStyle(color: Colors.white)),
+              onTap: () => launchUrl(Uri.parse('${AppConfig.api}/cgu'),
+                  mode: LaunchMode.externalApplication),
+            ),
+            ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined, color: Colors.white70),
+              title: const Text('Politique de confidentialité',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () => launchUrl(Uri.parse('${AppConfig.api}/confidentialite'),
+                  mode: LaunchMode.externalApplication),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Suppression DÉFINITIVE du compte (exigence Google Play) : double confirmation.
+  void _confirmDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Text('Supprimer ton compte ?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Cette action est DÉFINITIVE :\n\n'
+          '• toutes tes vidéos seront supprimées\n'
+          '• ton solde et tes gains restants seront perdus\n'
+          '• ton profil sera effacé\n\n'
+          'Pense à retirer ton argent avant.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _reallyDeleteAccount();
+            },
+            child: const Text('Continuer', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _reallyDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Text('Dernière confirmation',
+            style: TextStyle(color: AppColors.error)),
+        content: const Text(
+          'Confirme la suppression définitive de ton compte BeninPlay.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final res = await ApiService.deleteAccount();
+              if (!mounted) return;
+              if (res['success'] == true) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(res['message']?.toString() ?? 'Suppression impossible'),
+                  backgroundColor: AppColors.error,
+                ));
+              }
+            },
+            child: const Text('Supprimer définitivement'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1146,10 +1256,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: _showHelp,
                   ),
                   _MenuItem(
+                    icon: Icons.description_outlined,
+                    label: 'CGU & Confidentialité',
+                    onTap: _openLegal,
+                  ),
+                  _MenuItem(
                     icon: Icons.logout,
                     label: 'Déconnexion',
                     color: AppColors.error,
                     onTap: _confirmLogout,
+                  ),
+                  _MenuItem(
+                    icon: Icons.delete_forever_outlined,
+                    label: 'Supprimer mon compte',
+                    color: AppColors.error,
+                    onTap: _confirmDeleteAccount,
                   ),
                 ],
               ),

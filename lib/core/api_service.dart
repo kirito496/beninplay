@@ -277,6 +277,37 @@ class ApiService {
     }
   }
 
+  /// Signale une vidéo à la modération (exigence Google Play).
+  /// [reason] : nudite | violence | haine | arnaque | spam | mineur | autre
+  static Future<Map<String, dynamic>> reportVideo(String videoId, String reason) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/videos/$videoId/report'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'reason': reason}),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Bloque un utilisateur : ses vidéos disparaissent du fil.
+  static Future<Map<String, dynamic>> blockUser(String userId) async {
+    final res = await http.post(
+      Uri.parse('${AppConfig.api}/api/users/$userId/block'),
+      headers: await _headers(auth: true),
+    );
+    return jsonDecode(res.body);
+  }
+
+  /// Suppression DÉFINITIVE du compte (exigence Google Play).
+  static Future<Map<String, dynamic>> deleteAccount() async {
+    final res = await http.delete(
+      Uri.parse('${AppConfig.api}/api/users/me'),
+      headers: await _headers(auth: true),
+    );
+    final data = jsonDecode(res.body);
+    if (data['success'] == true) await clearToken();
+    return data;
+  }
+
   static Future<Map<String, dynamic>> likeVideo(String videoId) async {
     final res = await http.post(
       Uri.parse('${AppConfig.api}/api/videos/$videoId/like'),

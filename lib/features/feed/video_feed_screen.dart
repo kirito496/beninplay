@@ -709,6 +709,129 @@ class _VideoPageState extends State<_VideoPage> {
     Share.share(text, subject: widget.video.title);
   }
 
+  // ── Menu « Plus » : signaler la vidéo / bloquer le créateur ────────────────
+  // Exigences Google Play pour les applis à contenu utilisateur (UGC).
+  void _showMoreMenu(BuildContext context) {
+    if (widget.video.id == 'bee_fallback') return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
+              title: const Text('Signaler cette vidéo',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showReportSheet(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: AppColors.error),
+              title: Text('Bloquer @${widget.video.creatorName}',
+                  style: const TextStyle(color: Colors.white)),
+              subtitle: const Text('Ses vidéos disparaîtront de ton fil',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _blockCreator();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportSheet(BuildContext context) {
+    const reasons = <String, String>{
+      'nudite': '🔞 Nudité ou contenu sexuel',
+      'violence': '⚔️ Violence',
+      'haine': '😡 Discours haineux',
+      'arnaque': '💸 Arnaque ou fraude',
+      'spam': '📢 Spam',
+      'mineur': '🚨 Mineur en danger',
+      'autre': '❓ Autre',
+    };
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('Pourquoi signales-tu cette vidéo ?',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            ...reasons.entries.map((e) => ListTile(
+                  dense: true,
+                  title: Text(e.value, style: const TextStyle(color: Colors.white)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final res = await ApiService.reportVideo(widget.video.id, e.key);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(res['message']?.toString() ??
+                          'Signalement envoyé. Merci !'),
+                      backgroundColor: res['success'] == true
+                          ? AppColors.success
+                          : AppColors.error,
+                    ));
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _blockCreator() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: Text('Bloquer @${widget.video.creatorName} ?',
+            style: const TextStyle(color: Colors.white, fontSize: 17)),
+        content: const Text(
+          'Ses vidéos disparaîtront de ton fil. Tu pourras le débloquer plus tard depuis son profil.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Bloquer')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final res = await ApiService.blockUser(widget.video.creatorId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['success'] == true
+          ? '@${widget.video.creatorName} bloqué. Actualise ton fil.'
+          : (res['message']?.toString() ?? 'Blocage impossible')),
+      backgroundColor:
+          res['success'] == true ? AppColors.success : AppColors.error,
+    ));
+  }
 
   // Écran de déblocage payant (vidéo vendue à l'unité)
   Widget _buildPaywall(BuildContext context) {
@@ -1053,6 +1176,12 @@ class _VideoPageState extends State<_VideoPage> {
                   creatorName: widget.video.creatorName,
                   videoId: widget.video.id,
                 ),
+              ),
+              const SizedBox(height: 18),
+              _ActionButton(
+                icon: Icons.more_horiz,
+                label: 'Plus',
+                onTap: () => _showMoreMenu(context),
               ),
               const SizedBox(height: 18),
               _RotatingDisk(

@@ -1,4 +1,4 @@
-package com.example.beninplay
+package bj.beninplay.app
 
 import android.provider.Settings
 import android.view.WindowManager
