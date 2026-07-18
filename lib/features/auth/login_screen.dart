@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../shared/widgets/bp_logo.dart';
 import 'otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -60,7 +61,15 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.normalBg,
-      body: SafeArea(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.5),
+            radius: 1.2,
+            colors: [Color(0xFF07200F), Colors.black],
+          ),
+        ),
+        child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Form(
@@ -71,25 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 60),
 
                 // Logo
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'BP',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                  ),
-                ),
+                const BpLogo(size: 92),
 
                 const SizedBox(height: 20),
 
@@ -113,7 +104,28 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 60),
+                const SizedBox(height: 46),
+
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Bienvenue 👋',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Connecte-toi avec ton email pour continuer',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+                  ),
+                ),
+                const SizedBox(height: 18),
 
                 // Champ email
                 TextFormField(
@@ -192,6 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

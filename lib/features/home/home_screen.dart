@@ -499,16 +499,27 @@ class _HomeScreenState extends State<HomeScreen> {
               label: AppStrings.navDiscover,
             ),
             BottomNavigationBarItem(
+              // Bouton Publier bien visible (façon TikTok) : pastille en
+              // dégradé vert→jaune avec halo lumineux.
               icon: Container(
-                width: 44,
-                height: 30,
+                width: 52,
+                height: 34,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [AppColors.primary, Color(0xFF00897B)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF00E676), AppColors.primary],
                   ),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.55),
+                      blurRadius: 12,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.add, color: Colors.white, size: 22),
+                child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
               ),
               label: AppStrings.navUpload,
             ),

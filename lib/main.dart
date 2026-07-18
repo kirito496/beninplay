@@ -6,6 +6,7 @@ import 'core/api_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
+import 'shared/widgets/bp_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,36 +69,48 @@ class _SplashRouterState extends State<_SplashRouter> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'BP',
-              style: TextStyle(
-                color: Color(0xFF00E676),
-                fontSize: 52,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 4,
+      body: Container(
+        // Fond avec une lueur verte douce (fini le noir plat)
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.3),
+            radius: 1.1,
+            colors: [Color(0xFF07200F), Colors.black],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BpLogo(size: 104),
+              SizedBox(height: 22),
+              Text(
+                'BeninPlay',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-            SizedBox(height: 16),
-            Text(
-              'BeninPlay',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+              SizedBox(height: 6),
+              Text(
+                'Le divertissement béninois',
+                style: TextStyle(color: Colors.white54, fontSize: 14),
               ),
-            ),
-            SizedBox(height: 40),
-            CircularProgressIndicator(
-              color: Color(0xFF00E676),
-              strokeWidth: 2,
-            ),
-          ],
+              SizedBox(height: 44),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  color: Color(0xFF00E676),
+                  strokeWidth: 2.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
