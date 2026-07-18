@@ -1034,11 +1034,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
+                // Bannière créateur : profondeur verte + lueur (fini le plat)
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF1A1A2E), AppColors.normalBg],
+                  gradient: RadialGradient(
+                    center: Alignment(0, -1.2),
+                    radius: 1.6,
+                    colors: [Color(0xFF11522B), Color(0xFF07200F), AppColors.normalBg],
                   ),
                 ),
                 child: Column(
@@ -1049,7 +1050,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: _editProfile,
                       child: Stack(
                         children: [
-                          CircleAvatar(
+                          // Anneau dégradé autour de l'avatar (façon story)
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF00E676), AppColors.accent],
+                              ),
+                            ),
+                            child: CircleAvatar(
                             radius: 44,
                             backgroundColor: AppColors.primary,
                             child: Text(
@@ -1060,6 +1072,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          ),
                           ),
                           Positioned(
                             bottom: 0,
@@ -1097,14 +1110,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _StatItem(value: statsVideos, label: 'Vidéos'),
-                      _StatItem(value: statsFollowers, label: 'Abonnés'),
-                      _StatItem(value: statsFollowing, label: 'Abonnements'),
-                      _StatItem(value: statsLikes, label: 'Likes'),
-                    ],
+                  // Stats en carte "vitrée" — vitrine du créateur
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _StatItem(value: statsVideos, label: 'Vidéos'),
+                        _StatItem(value: statsFollowers, label: 'Abonnés'),
+                        _StatItem(value: statsFollowing, label: 'Abonnements'),
+                        _StatItem(value: statsLikes, label: 'Likes'),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 16),

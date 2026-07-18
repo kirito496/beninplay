@@ -67,26 +67,66 @@ class _WalletScreenState extends State<WalletScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
+                    // Carte solde façon "carte bancaire premium"
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF00C853), Color(0xFF009624)],
+                          colors: [Color(0xFF00E676), Color(0xFF00C853), Color(0xFF00695C)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.35),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Solde disponible', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                          const SizedBox(height: 8),
-                          Text(
-                            _balanceVisible ? '${_balance.toStringAsFixed(0)} FCFA' : '••••••',
-                            style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                          Row(
+                            children: [
+                              const Icon(Icons.account_balance_wallet_rounded,
+                                  color: Colors.white70, size: 18),
+                              const SizedBox(width: 6),
+                              const Text('Solde disponible',
+                                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+                              const Spacer(),
+                              // Mini drapeau Bénin (identité)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.22),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text('🇧🇯 BeninPlay',
+                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 14),
+                          Text(
+                            _balanceVisible ? _balance.toStringAsFixed(0) : '••••••',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text('FCFA',
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2)),
                         ],
                       ),
                     ),

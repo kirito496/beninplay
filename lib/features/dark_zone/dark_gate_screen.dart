@@ -21,7 +21,17 @@ class _DarkGateScreenState extends State<DarkGateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.darkBg,
-      body: SafeArea(
+      body: Container(
+        // Ambiance Zone Dark : lueur violette/rose — rupture nette avec la
+        // zone normale (verte), l'utilisateur SENT qu'il change d'univers.
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.6, -0.6),
+            radius: 1.4,
+            colors: [Color(0xFF3A0D4F), Color(0xFF16041F), Color(0xFF0D0010)],
+          ),
+        ),
+        child: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           child: switch (_step) {
@@ -37,6 +47,7 @@ class _DarkGateScreenState extends State<DarkGateScreen> {
               ),
             ),
           },
+        ),
         ),
       ),
     );

@@ -584,6 +584,8 @@ class _VideoPage extends StatefulWidget {
 
 class _VideoPageState extends State<_VideoPage> {
   bool _isLiked = false;
+  bool _likePop = false; // animation "pop" du cœur au like
+  bool _bigHeart = false; // grand cœur au double-tap (façon TikTok)
   bool _isFollowing = false;
   int _likes = 0;
   bool _showPauseIcon = false;
@@ -652,13 +654,29 @@ class _VideoPageState extends State<_VideoPage> {
     });
   }
 
+  // Double-tap sur la vidéo = like + grand cœur qui éclate au centre
+  void _onDoubleTapLike() {
+    if (widget.video.id == 'bee_fallback') return;
+    if (!_isLiked) _toggleLike();
+    setState(() => _bigHeart = true);
+    Future.delayed(const Duration(milliseconds: 620), () {
+      if (mounted) setState(() => _bigHeart = false);
+    });
+  }
+
   Future<void> _toggleLike() async {
     if (widget.video.id == 'bee_fallback') return;
     final wasLiked = _isLiked;
     setState(() {
       _isLiked = !_isLiked;
       _likes += _isLiked ? 1 : -1;
+      if (_isLiked) _likePop = true; // le cœur "pop" à l'appui
     });
+    if (_isLiked) {
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) setState(() => _likePop = false);
+      });
+    }
     // Mémorise tout de suite pour que le like persiste au retour
     widget.onLikeChanged?.call(_isLiked, _likes);
     try {
@@ -904,6 +922,7 @@ class _VideoPageState extends State<_VideoPage> {
         // ── Vidéo ────────────────────────────────────────────────────────
         GestureDetector(
           onTap: _togglePlayPause,
+          onDoubleTap: _onDoubleTapLike,
           // Glisser vers la gauche → ouvre le profil du créateur
           onHorizontalDragEnd: (details) {
             if ((details.primaryVelocity ?? 0) < -250) _openCreator();
@@ -965,6 +984,27 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
+        // ── Grand cœur du double-tap (façon TikTok) ──────────────────────
+        IgnorePointer(
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _bigHeart ? 1 : 0,
+              duration: const Duration(milliseconds: 140),
+              child: AnimatedScale(
+                scale: _bigHeart ? 1.0 : 0.4,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.redAccent,
+                  size: 96,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 24)],
+                ),
+              ),
+            ),
+          ),
+        ),
+
         // ── Icône pause/play ─────────────────────────────────────────────
         if (_showPauseIcon && _ctrl != null)
           Center(
@@ -1002,6 +1042,30 @@ class _VideoPageState extends State<_VideoPage> {
                   end: Alignment.bottomCenter,
                   colors: [Colors.transparent, Colors.transparent, Colors.black38, Colors.black87],
                   stops: [0, 0.45, 0.75, 1],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // ── Voile dégradé en bas : le texte reste lisible même sur une
+        //    vidéo claire (comme TikTok) ─────────────────────────────────
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: Container(
+              height: 190,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Color(0x59000000),
+                    Color(0xA6000000),
+                  ],
                 ),
               ),
             ),
@@ -1144,11 +1208,16 @@ class _VideoPageState extends State<_VideoPage> {
           bottom: 24,
           child: Column(
             children: [
-              _ActionButton(
-                icon: _isLiked ? Icons.favorite : Icons.favorite_border,
-                color: _isLiked ? Colors.red : Colors.white,
-                label: _formatCount(_likes),
-                onTap: _toggleLike,
+              AnimatedScale(
+                scale: _likePop ? 1.35 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+                child: _ActionButton(
+                  icon: _isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: _isLiked ? Colors.red : Colors.white,
+                  label: _formatCount(_likes),
+                  onTap: _toggleLike,
+                ),
               ),
               const SizedBox(height: 18),
               _ActionButton(
