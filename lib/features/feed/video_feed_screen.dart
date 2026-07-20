@@ -14,6 +14,7 @@ import '../../shared/widgets/tip_sheet.dart';
 import '../profile/creator_profile_screen.dart';
 import '../upload/video_effects.dart';
 import '../../shared/widgets/bp_logo.dart';
+import '../../services/video_cache.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -115,28 +116,56 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _stale(int gen, int index) =>
       !mounted || (gen != _pageGen && index != _currentIndex);
 
+  // Indices dont la vidéo est en cours de téléchargement (évite de lancer
+  // deux fois le même téléchargement pendant qu'il est en cours).
+  final Set<int> _loading = {};
+
   // Initialise le contrôleur pour un index donné.
   //
-  // Lecture réseau DIRECTE (streaming progressif d'ExoPlayer) → la première
-  // image s'affiche le plus vite possible. Aucun proxy intermédiaire.
+  // CACHE DISQUE : la vidéo est d'abord TÉLÉCHARGÉE EN ENTIER sur le téléphone
+  // (VideoCache.getFile), puis lue depuis ce fichier local. Donc :
+  //  • la lecture en boucle ne reconsomme aucune data
+  //  • re-scroller vers une vidéo déjà vue est instantané et hors-ligne
   //
-  // [allowPreload] : quand c'est la vidéo AFFICHÉE, on ne prépare la suivante
-  // QU'UNE FOIS celle-ci prête — pour que toute la connexion aille d'abord à
-  // la vidéo que l'utilisateur regarde (et pas aux suivantes en même temps).
+  // [allowPreload] : la SUIVANTE n'est mise en cache qu'UNE FOIS la vidéo
+  // affichée entièrement téléchargée — la connexion sert d'abord à finir la
+  // vidéo en cours, jamais aux deux en même temps.
   Future<void> _initController(int index, {int? gen, bool allowPreload = true}) async {
     final g = gen ?? _pageGen;
-    if (_controllers.containsKey(index)) return;
+    if (_controllers.containsKey(index) || _loading.contains(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
-
     if (_stale(g, index)) return;
-    final url = video.playbackUrl;
 
-    final ctrl = VideoPlayerController.networkUrl(
-      Uri.parse(url),
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-    );
+    _loading.add(index);
+    VideoPlayerController? ctrl;
+    try {
+      // 1) Télécharge la vidéo EN ENTIER vers le disque (ou récupère le cache).
+      //    Tant que ce n'est pas fini, la suivante ne démarre pas.
+      final file = await VideoCache.getFile(video.cacheUrl);
 
+      // Zappée pendant le téléchargement (et trop loin) → on abandonne.
+      // Le fichier reste en cache pour un futur affichage (rien de perdu).
+      if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
+
+      // 2) Lecture depuis le FICHIER LOCAL (aucun réseau ensuite).
+      ctrl = VideoPlayerController.file(
+        file,
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+    } catch (_) {
+      // Échec du cache (hors-ligne, disque plein…) → repli : lecture réseau
+      // directe pour ne jamais bloquer la lecture.
+      if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
+      ctrl = VideoPlayerController.networkUrl(
+        Uri.parse(video.playbackUrl),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+      );
+    } finally {
+      _loading.remove(index);
+    }
+
+    if (ctrl == null) return; // abandonnée pendant le téléchargement
     _controllers[index] = ctrl;
     await ctrl.initialize();
 
@@ -153,8 +182,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
     if (mounted) setState(() {});
 
-    // La vidéo affichée est prête → SEULEMENT MAINTENANT on précharge la
-    // suivante (une seule), pour un swipe instantané sans ralentir l'actuelle.
+    // La vidéo affichée est ENTIÈREMENT en cache → SEULEMENT MAINTENANT on
+    // précharge la suivante (téléchargement disque), pour un swipe instantané.
     if (allowPreload && index == _currentIndex && g == _pageGen) {
       _initController(index + 1, gen: g, allowPreload: false);
     }
