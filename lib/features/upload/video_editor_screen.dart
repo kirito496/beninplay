@@ -336,11 +336,15 @@ class _DraggableItemState extends State<_DraggableItem> {
   Widget build(BuildContext context) {
     final it = widget.item;
     final fontSize = it.baseSize * it.scale;
+    // Largeur max d'un texte = 82% de l'écran → il revient à la ligne au lieu
+    // d'être coupé à droite. Cette même règle est utilisée à la lecture.
+    final boxW = it.type == 'emoji' ? fontSize * 1.4 : widget.area.width * 0.82;
     final w = it.type == 'emoji'
         ? Text(it.value, style: TextStyle(fontSize: fontSize))
         : Text(
             it.value,
             textAlign: TextAlign.center,
+            softWrap: true,
             style: TextStyle(
               fontSize: fontSize,
               color: Color(it.color),
@@ -350,9 +354,14 @@ class _DraggableItemState extends State<_DraggableItem> {
               ],
             ),
           );
+    // Ancré par son CENTRE (dx, dy) : la boîte de largeur fixe est centrée sur
+    // le point → position identique à la lecture dans le fil.
+    final left = (it.dx * widget.area.width - boxW / 2)
+        .clamp(0.0, (widget.area.width - boxW).clamp(0.0, widget.area.width));
     return Positioned(
-      left: it.dx * widget.area.width - 60,
-      top: it.dy * widget.area.height - fontSize,
+      left: left,
+      top: (it.dy * widget.area.height - fontSize)
+          .clamp(0.0, widget.area.height),
       child: GestureDetector(
         onScaleStart: (_) => _baseScale = it.scale,
         onScaleUpdate: (d) {
@@ -367,10 +376,9 @@ class _DraggableItemState extends State<_DraggableItem> {
               nx / widget.area.width, ny / widget.area.height, overTrash);
         },
         onScaleEnd: (_) => widget.onDrop(),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 120),
-          alignment: Alignment.center,
-          child: w,
+        child: SizedBox(
+          width: boxW,
+          child: Center(child: w),
         ),
       ),
     );

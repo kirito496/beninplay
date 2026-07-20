@@ -134,22 +134,31 @@ class OverlayLayer extends StatelessWidget {
       child: Stack(
         children: items.map((it) {
           final fontSize = it.baseSize * it.scale;
-          final w = Text(
-            it.value,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: fontSize,
-              color: Color(it.color),
-              fontWeight: FontWeight.w700,
-              shadows: const [
-                Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
-              ],
-            ),
-          );
+          final isEmoji = it.type == 'emoji';
+          // Même règle que l'éditeur : texte limité à 82% de la largeur (il
+          // revient à la ligne), boîte centrée sur le point (dx, dy).
+          final boxW = isEmoji ? fontSize * 1.4 : size.width * 0.82;
+          final child = isEmoji
+              ? Text(it.value, style: TextStyle(fontSize: fontSize))
+              : Text(
+                  it.value,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    color: Color(it.color),
+                    fontWeight: FontWeight.w700,
+                    shadows: const [
+                      Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
+                    ],
+                  ),
+                );
+          final left = (it.dx * size.width - boxW / 2)
+              .clamp(0.0, (size.width - boxW).clamp(0.0, size.width));
           return Positioned(
-            left: it.dx * size.width - (fontSize * it.value.length * 0.3),
-            top: it.dy * size.height - fontSize,
-            child: w,
+            left: left,
+            top: (it.dy * size.height - fontSize).clamp(0.0, size.height),
+            child: SizedBox(width: boxW, child: Center(child: child)),
           );
         }).toList(),
       ),
