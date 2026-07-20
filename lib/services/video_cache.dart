@@ -1,114 +1,147 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-/// Cache disque des vidéos + file d'attente de téléchargement à priorité.
+/// Cache disque des vidéos + téléchargements EN FLUX, ANNULABLES et à priorité.
 ///
-/// Chaque vidéo est téléchargée EN ENTIER une seule fois vers le stockage du
-/// téléphone, puis rejouée depuis ce fichier local (lecture en boucle et
-/// re-visionnage = 0 data ; hors-ligne pour les vidéos déjà vues).
-///
-/// POINT CLÉ — un SEUL téléchargement à la fois :
-/// on ne télécharge jamais deux vidéos en parallèle. Toute la bande passante
-/// va donc sur UNE seule vidéo → elle finit au plus vite. De plus, la vidéo
-/// que l'utilisateur REGARDE (priorité haute) passe toujours DEVANT les
-/// préchargements des vidéos à venir (priorité basse). Résultat : la vidéo en
-/// cours se termine vite, avant que l'utilisateur ait fini de la regarder,
-/// puis les suivantes s'enchaînent une par une.
+/// Chaque vidéo est téléchargée en streaming (octet par octet) puis rangée dans
+/// le cache disque, et rejouée depuis ce fichier local. Points clés :
+///  • un SEUL téléchargement à la fois → toute la connexion sur une vidéo
+///  • la vidéo REGARDÉE (priorité haute) COUPE le préchargement en cours d'une
+///    vidéo à venir → toute la connexion bascule aussitôt sur elle
+///  • annulation instantanée si tu défiles (le téléchargement en flux est
+///    interrompu au milieu, contrairement à un téléchargement « d'un bloc »)
+///  • lecture en boucle / re-visionnage = 0 data (tout est sur le disque)
 class VideoCache {
   VideoCache._();
 
   static final CacheManager _manager = CacheManager(
     Config(
       'bpVideoCache',
-      stalePeriod: const Duration(days: 30), // on garde les vidéos longtemps
-      maxNrOfCacheObjects: 500,              // beaucoup de vidéos préchargées
-      fileService: HttpFileService(),
+      stalePeriod: const Duration(days: 30),
+      maxNrOfCacheObjects: 500,
     ),
   );
 
-  // Deux files : haute priorité (vidéo regardée) et basse (préchargement).
-  static final Queue<_Job> _high = Queue<_Job>();
-  static final Queue<_Job> _low = Queue<_Job>();
-  static final Map<String, _Job> _pending = {}; // dé-doublonne par URL
-  static bool _busy = false;
+  static final Map<String, _Download> _pending = {}; // url -> job (en file ou actif)
+  static final Queue<_Download> _highQ = Queue<_Download>(); // vidéo regardée
+  static final Queue<_Download> _lowQ = Queue<_Download>();   // préchargements
+  static _Download? _active;
 
-  // ── Estimation de la vitesse de connexion (octets/seconde) ────────────────
-  // Mesurée sur les vrais téléchargements de vidéos. Sert à choisir HD ou 480p.
+  // Estimation de la vitesse de connexion (octets/seconde), pour choisir HD/480p.
   static double? _speedBps;
 
   /// Vrai quand la connexion est assez rapide pour la HD (> ~300 Ko/s).
-  /// Par défaut (aucune mesure encore) : false → on démarre en 480p léger,
-  /// puis on passe en HD dès qu'une mesure confirme une bonne connexion.
+  /// Par défaut (pas encore de mesure) : false → on démarre en 480p léger.
   static bool get fastConnection => _speedBps != null && _speedBps! > 300 * 1024;
 
-  /// Débit estimé en Ko/s (pour affichage éventuel). Null si pas encore mesuré.
+  /// Débit estimé en Ko/s (null si pas encore mesuré).
   static double? get speedKbps => _speedBps == null ? null : _speedBps! / 1024;
 
-  /// Vidéo à lire MAINTENANT : priorité haute, passe devant les préchargements.
-  static Future<File> getForPlayback(String url) => _enqueue(url, high: true);
+  /// Vidéo à lire MAINTENANT : priorité haute. Si un préchargement est en cours,
+  /// il est COUPÉ pour libérer toute la connexion.
+  static Future<File> getForPlayback(String url) => _request(url, high: true);
 
-  /// Vidéo à venir : priorité basse (ne démarre que si rien d'urgent).
-  static Future<File> prefetch(String url) => _enqueue(url, high: false);
+  /// Vidéo à venir : priorité basse (cédée dès qu'une vidéo regardée arrive).
+  static Future<File> prefetch(String url) => _request(url, high: false);
 
-  static Future<File> _enqueue(String url, {required bool high}) {
-    // Déjà demandée ? On réutilise le même job. Si elle devient prioritaire,
-    // on la remonte dans la file haute.
+  static Future<File> _request(String url, {required bool high}) async {
+    // Déjà demandée ? On réutilise le même job (et on le remonte si besoin).
     final existing = _pending[url];
     if (existing != null) {
       if (high && !existing.high) {
         existing.high = true;
-        _low.remove(existing);
-        _high.add(existing);
+        if (_lowQ.remove(existing)) _highQ.add(existing); // s'il attendait encore
       }
-      return existing.completer.future;
+      final f = await existing.completer.future;
+      if (f == null) throw Exception('téléchargement annulé');
+      return f;
     }
-    final job = _Job(url, high);
-    _pending[url] = job;
-    (high ? _high : _low).add(job);
+
+    final d = _Download(url, high);
+    _pending[url] = d;
+    (high ? _highQ : _lowQ).add(d);
+
+    // Priorité haute demandée alors qu'un PRÉCHARGEMENT (basse priorité) est en
+    // cours → on le coupe net pour concentrer la connexion sur cette vidéo.
+    if (high && _active != null && !_active!.high) {
+      _active!.cancel();
+    }
+
     _pump();
-    return job.completer.future;
+    final f = await d.completer.future;
+    if (f == null) throw Exception('téléchargement annulé');
+    return f;
   }
 
-  // Traite la file, UN SEUL téléchargement à la fois, la haute priorité d'abord.
-  static Future<void> _pump() async {
-    if (_busy) return;
-    _busy = true;
+  static void _pump() {
+    if (_active != null) return;
+    _Download? next;
+    if (_highQ.isNotEmpty) {
+      next = _highQ.removeFirst();
+    } else if (_lowQ.isNotEmpty) {
+      next = _lowQ.removeFirst();
+    }
+    if (next == null) return;
+    _active = next;
+    final job = next;
+    _run(job).whenComplete(() {
+      _pending.remove(job.url);
+      _active = null;
+      _pump(); // enchaîne la suivante
+    });
+  }
+
+  static Future<void> _run(_Download d) async {
+    void done(File? f) {
+      if (!d.completer.isCompleted) d.completer.complete(f);
+    }
     try {
-      while (_high.isNotEmpty || _low.isNotEmpty) {
-        final job = _high.isNotEmpty ? _high.removeFirst() : _low.removeFirst();
-        try {
-          // Téléchargement réel (pas déjà en cache) ? → on mesure le débit.
-          final already = (await _manager.getFileFromCache(job.url)) != null;
-          final sw = Stopwatch()..start();
-          final file = await _manager.getSingleFile(job.url);
-          sw.stop();
-          if (!already) await _measure(file, sw.elapsedMilliseconds);
-          job.completer.complete(file);
-        } catch (e) {
-          job.completer.completeError(e);
-        } finally {
-          _pending.remove(job.url);
-        }
+      // Déjà en cache ? → instantané.
+      final cached = await _manager.getFileFromCache(d.url);
+      if (cached != null) return done(cached.file);
+      if (d.cancelled) return done(null);
+
+      final client = http.Client();
+      d.client = client;
+      final resp = await client.send(http.Request('GET', Uri.parse(d.url)));
+      if (resp.statusCode != 200) return done(null);
+
+      final builder = BytesBuilder(copy: false);
+      final sw = Stopwatch()..start();
+      await for (final chunk in resp.stream) {
+        if (d.cancelled) return done(null); // coupé entre deux morceaux
+        builder.add(chunk);
       }
+      sw.stop();
+      if (d.cancelled) return done(null);
+
+      final Uint8List bytes = builder.takeBytes();
+      if (bytes.isEmpty) return done(null);
+      _measure(bytes.length, sw.elapsedMilliseconds);
+
+      // Range le fichier complet dans le cache disque (LRU, 500 vidéos, 30 j).
+      final file = await _manager.putFile(d.url, bytes, fileExtension: 'mp4');
+      return done(file);
+    } catch (_) {
+      // client.close() (annulation) ou erreur réseau → traité comme annulé.
+      return done(null);
     } finally {
-      _busy = false;
+      try { d.client?.close(); } catch (_) {}
+      d.client = null;
     }
   }
 
   // Met à jour l'estimation de vitesse à partir d'un vrai téléchargement.
-  static Future<void> _measure(File file, int elapsedMs) async {
-    try {
-      final bytes = await file.length();
-      final secs = elapsedMs / 1000.0;
-      // On ignore les mesures trop courtes/petites (peu fiables).
-      if (secs > 0.3 && bytes > 150 * 1024) {
-        final bps = bytes / secs;
-        // Moyenne glissante douce pour lisser les à-coups du réseau.
-        _speedBps = _speedBps == null ? bps : (_speedBps! * 0.5 + bps * 0.5);
-      }
-    } catch (_) {}
+  static void _measure(int bytes, int elapsedMs) {
+    final secs = elapsedMs / 1000.0;
+    if (secs > 0.3 && bytes > 150 * 1024) {
+      final bps = bytes / secs;
+      _speedBps = _speedBps == null ? bps : (_speedBps! * 0.5 + bps * 0.5);
+    }
   }
 
   /// Vrai si la vidéo est déjà entièrement présente sur le disque.
@@ -121,9 +154,18 @@ class VideoCache {
   static Future<void> clear() => _manager.emptyCache();
 }
 
-class _Job {
+class _Download {
   final String url;
   bool high;
-  final Completer<File> completer = Completer<File>();
-  _Job(this.url, this.high);
+  bool cancelled = false;
+  http.Client? client;
+  final Completer<File?> completer = Completer<File?>();
+  _Download(this.url, this.high);
+
+  /// Coupe le téléchargement en cours : fermer le client interrompt le flux
+  /// réseau immédiatement (au milieu du fichier).
+  void cancel() {
+    cancelled = true;
+    try { client?.close(); } catch (_) {}
+  }
 }
