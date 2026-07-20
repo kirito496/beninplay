@@ -183,16 +183,45 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (mounted) setState(() {});
 
     // La vidéo affichée est ENTIÈREMENT en cache → SEULEMENT MAINTENANT on
-    // précharge la suivante (téléchargement disque), pour un swipe instantané.
+    // lance la chaîne de préchargement des suivantes.
     if (allowPreload && index == _currentIndex && g == _pageGen) {
-      _initController(index + 1, gen: g, allowPreload: false);
+      _prefetchChain(index, g);
     }
   }
 
-  // Précharge la vidéo suivante (contrôleur en mémoire) sans cascader.
+  // Nombre de vidéos mises en cache À L'AVANCE au-delà de la suivante.
+  // La connexion sert donc à prendre de l'avance pendant que tu regardes.
+  static const int _prefetchAhead = 3;
+
+  // Chaîne de préchargement SÉQUENTIELLE : pendant que tu regardes la vidéo
+  // courante (déjà entièrement en cache), on télécharge les suivantes UNE PAR
+  // UNE → toute la connexion va sur une seule vidéo à la fois (au plus vite),
+  // et on prend plusieurs vidéos d'avance. Interrompue dès que tu défiles
+  // (le changement de génération arrête la boucle).
+  Future<void> _prefetchChain(int currentIdx, int gen) async {
+    // 1) La SUIVANTE : contrôleur prêt (swipe instantané).
+    await _initController(currentIdx + 1, gen: gen, allowPreload: false);
+    // 2) Les vidéos d'après : juste en cache disque, une par une.
+    for (int k = 2; k <= _prefetchAhead + 1; k++) {
+      if (!mounted || gen != _pageGen) return; // tu as défilé → on arrête
+      final i = currentIdx + k;
+      if (i >= _videos.length) {
+        if (_hasMore) _loadVideos(); // recharge la liste puis la boucle reprendra
+        return;
+      }
+      try {
+        final url = _videos[i].cacheUrl;
+        if (!await VideoCache.isCached(url)) {
+          await VideoCache.getFile(url); // attend la fin AVANT la suivante
+        }
+      } catch (_) { /* réseau/disque : on tente la suivante */ }
+    }
+  }
+
+  // Relance la chaîne de préchargement (quand la vidéo est déjà en cache).
   void _preloadNext(int index, int gen) {
     if (mounted && gen == _pageGen && _currentIndex == index) {
-      _initController(index + 1, gen: gen, allowPreload: false);
+      _prefetchChain(index, gen);
     }
   }
 
