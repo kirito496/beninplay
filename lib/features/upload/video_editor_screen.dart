@@ -136,6 +136,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      // IMPORTANT : le theme global impose minimumSize
+                      // Size(infinity, 52) (bon pour les gros boutons pleine
+                      // largeur), mais dans une Row ça force une « largeur
+                      // infinie » et fait planter tout l'éditeur (bouton +
+                      // outils + filtres invisibles). On le remet à une taille
+                      // finie ici.
+                      minimumSize: const Size(0, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(24)),
                     ),
