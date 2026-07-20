@@ -16,6 +16,7 @@ import 'boosts_dashboard.dart';
 import '../dark_zone/dark_gate_screen.dart' as dark_gate;
 import '../discover/leaderboard_screen.dart';
 import '../notifications/notifications_screen.dart';
+import '../saved/saved_videos_screen.dart';
 import 'creator_stats_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -1266,6 +1267,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Vidéos aimées',
                     badge: '${_likedVideos.length}',
                     onTap: () => _showVideos('Vidéos aimées', _likedVideos.cast<dynamic>()),
+                  ),
+                  _MenuItem(
+                    icon: Icons.bookmark_border,
+                    label: 'Mes favoris',
+                    onTap: () => SavedVideosScreen.open(context),
                   ),
                   _MenuItem(
                     icon: Icons.bookmark_outline,

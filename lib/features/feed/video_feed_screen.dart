@@ -15,6 +15,7 @@ import '../profile/creator_profile_screen.dart';
 import '../upload/video_effects.dart';
 import '../../shared/widgets/bp_logo.dart';
 import '../../services/video_cache.dart';
+import '../../services/saved_videos.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -683,7 +684,9 @@ class _VideoPage extends StatefulWidget {
 class _VideoPageState extends State<_VideoPage> {
   bool _isLiked = false;
   bool _likePop = false; // animation "pop" du cœur au like
+  bool _savePop = false; // animation "pop" du bouton Enregistrer
   bool _bigHeart = false; // grand cœur au double-tap (façon TikTok)
+  int _heartBurst = 0; // clé incrémentale : relance la volée de cœurs
   bool _isFollowing = false;
   int _likes = 0;
   bool _showPauseIcon = false;
@@ -752,14 +755,35 @@ class _VideoPageState extends State<_VideoPage> {
     });
   }
 
-  // Double-tap sur la vidéo = like + grand cœur qui éclate au centre
+  // Double-tap sur la vidéo = like + grand cœur + volée de petits cœurs
+  // qui s'envolent (façon TikTok/Instagram).
   void _onDoubleTapLike() {
     if (widget.video.id == 'bee_fallback') return;
     if (!_isLiked) _toggleLike();
-    setState(() => _bigHeart = true);
+    setState(() {
+      _bigHeart = true;
+      _heartBurst++; // relance une nouvelle volée de cœurs
+    });
     Future.delayed(const Duration(milliseconds: 620), () {
       if (mounted) setState(() => _bigHeart = false);
     });
+  }
+
+  // Enregistrer / retirer des favoris (persistance locale, aucun serveur).
+  Future<void> _toggleSave() async {
+    if (widget.video.id == 'bee_fallback') return;
+    final now = await SavedVideos.toggle(widget.video);
+    if (!mounted) return;
+    setState(() => _savePop = true);
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) setState(() => _savePop = false);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(milliseconds: 1200),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: now ? AppColors.accent : Colors.white24,
+      content: Text(now ? 'Ajouté à tes favoris 🔖' : 'Retiré des favoris'),
+    ));
   }
 
   Future<void> _toggleLike() async {
@@ -1082,6 +1106,14 @@ class _VideoPageState extends State<_VideoPage> {
           ),
         ),
 
+        // ── Volée de petits cœurs qui s'envolent (façon TikTok) ──────────
+        if (_heartBurst > 0)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _FloatingHearts(key: ValueKey(_heartBurst)),
+            ),
+          ),
+
         // ── Grand cœur du double-tap (façon TikTok) ──────────────────────
         IgnorePointer(
           child: Center(
@@ -1324,6 +1356,27 @@ class _VideoPageState extends State<_VideoPage> {
                 onTap: () => _showComments(context),
               ),
               const SizedBox(height: 18),
+              // ── Enregistrer / Favoris (façon TikTok) ────────────────────
+              if (widget.video.id != 'bee_fallback') ...[
+                ValueListenableBuilder<Set<String>>(
+                  valueListenable: SavedVideos.ids,
+                  builder: (_, ids, __) {
+                    final saved = ids.contains(widget.video.id);
+                    return AnimatedScale(
+                      scale: _savePop ? 1.35 : 1.0,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutBack,
+                      child: _ActionButton(
+                        icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                        color: saved ? AppColors.accent : Colors.white,
+                        label: saved ? 'Enregistré' : 'Enregistrer',
+                        onTap: _toggleSave,
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 18),
+              ],
               // La Zone Dark n'est jamais partageable → pas de bouton Partager
               if (!widget.video.isDark) ...[
                 _ActionButton(
@@ -1416,6 +1469,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
+  String? _replyingTo; // @auteur auquel on répond (affiché au-dessus du champ)
   bool _sending = false;
 
   @override
@@ -1427,7 +1482,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void dispose() {
     _ctrl.dispose();
+    _focus.dispose();
     super.dispose();
+  }
+
+  // Prépare une réponse : préremplit le champ avec @auteur et donne le focus.
+  void _startReply(String author) {
+    final handle = '@${author.toLowerCase().replaceAll(' ', '_')}';
+    setState(() => _replyingTo = author);
+    _ctrl.text = '$handle ';
+    _ctrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: _ctrl.text.length),
+    );
+    _focus.requestFocus();
   }
 
   Future<void> _loadComments() async {
@@ -1450,6 +1517,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     try {
       await ApiService.addComment(widget.videoId, text);
       _ctrl.clear();
+      setState(() => _replyingTo = null);
       await _loadComments();
     } catch (_) {
       if (mounted) {
@@ -1502,21 +1570,35 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 final c = _comments[i];
                 final author = (c['author_name'] ?? c['user_name'] ?? c['phone'] ?? 'Anonyme').toString();
                 final content = (c['content'] ?? '').toString();
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary,
-                    radius: 16,
-                    child: Text(
-                      author.isNotEmpty ? author[0].toUpperCase() : '?',
-                      style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(author, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                  subtitle: Text(content, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                return _CommentTile(
+                  author: author,
+                  content: content,
+                  onReply: () => _startReply(author),
                 );
               },
             ),
           ),
+          // Bandeau "Réponse à @x" avec bouton pour annuler.
+          if (_replyingTo != null)
+            Container(
+              width: double.infinity,
+              color: Colors.white10,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  Text('Réponse à @${_replyingTo!.toLowerCase().replaceAll(' ', '_')}',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() => _replyingTo = null);
+                      _ctrl.clear();
+                    },
+                    child: const Icon(Icons.close, color: Colors.white38, size: 16),
+                  ),
+                ],
+              ),
+            ),
           SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
@@ -1528,6 +1610,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
+                      focusNode: _focus,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         hintText: 'Ajouter un commentaire...',
@@ -1552,6 +1635,89 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Tuile de commentaire : like (local) + Répondre ──────────────────────────
+
+class _CommentTile extends StatefulWidget {
+  final String author;
+  final String content;
+  final VoidCallback onReply;
+  const _CommentTile({
+    required this.author,
+    required this.content,
+    required this.onReply,
+  });
+
+  @override
+  State<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends State<_CommentTile> {
+  bool _liked = false;
+  int _likes = 0;
+
+  void _toggleLike() {
+    setState(() {
+      _liked = !_liked;
+      _likes += _liked ? 1 : -1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: AppColors.primary,
+            radius: 16,
+            child: Text(
+              widget.author.isNotEmpty ? widget.author[0].toUpperCase() : '?',
+              style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.author,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(widget.content,
+                    style: const TextStyle(color: Colors.white, fontSize: 14)),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: widget.onReply,
+                  child: const Text('Répondre',
+                      style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            children: [
+              GestureDetector(
+                onTap: _toggleLike,
+                child: Icon(
+                  _liked ? Icons.favorite : Icons.favorite_border,
+                  color: _liked ? Colors.red : Colors.white38,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(_likes > 0 ? '$_likes' : '',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
           ),
         ],
       ),
@@ -1585,6 +1751,74 @@ class _ActionButton extends StatelessWidget {
           Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
         ],
       ),
+    );
+  }
+}
+
+// ── Volée de cœurs qui montent et s'estompent (double-tap) ──────────────────
+
+class _FloatingHearts extends StatefulWidget {
+  const _FloatingHearts({super.key});
+
+  @override
+  State<_FloatingHearts> createState() => _FloatingHeartsState();
+}
+
+class _FloatingHeartsState extends State<_FloatingHearts>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+        ..forward();
+
+  // 6 cœurs avec un décalage horizontal, une taille et une rotation aléatoires
+  // (déterministes à partir de l'index → pas besoin d'import random).
+  static const _n = 6;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (_, cts) {
+        final cx = cts.maxWidth / 2;
+        final cy = cts.maxHeight / 2;
+        return AnimatedBuilder(
+          animation: _c,
+          builder: (_, __) {
+            final t = _c.value;
+            return Stack(
+              children: List.generate(_n, (i) {
+                final delay = i * 0.06;
+                final p = ((t - delay) / (1 - delay)).clamp(0.0, 1.0);
+                if (p <= 0) return const SizedBox.shrink();
+                final dir = (i.isEven ? 1 : -1);
+                final spread = 26.0 + (i % 3) * 18.0;
+                final dx = dir * spread * p;
+                final dy = -160.0 * p * (1 + (i % 2) * 0.25);
+                final size = 22.0 + (i % 3) * 8.0;
+                final opacity = (1 - p).clamp(0.0, 1.0);
+                return Positioned(
+                  left: cx + dx - size / 2,
+                  top: cy + dy - size / 2,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.rotate(
+                      angle: dir * 0.25 * p,
+                      child: Icon(Icons.favorite,
+                          color: i.isEven ? Colors.redAccent : Colors.pinkAccent,
+                          size: size),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -6,6 +6,7 @@ import 'core/api_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
+import 'services/saved_videos.dart';
 import 'shared/widgets/bp_logo.dart';
 
 void main() async {
@@ -14,6 +15,7 @@ void main() async {
     url: AppConfig.supabaseUrl,
     anonKey: AppConfig.supabaseAnonKey,
   );
+  await SavedVideos.init(); // précharge les favoris (état des boutons 🔖)
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
