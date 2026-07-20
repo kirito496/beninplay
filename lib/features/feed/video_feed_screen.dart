@@ -21,7 +21,7 @@ class VideoFeedScreen extends StatefulWidget {
   final bool isTabActive;
   final int refreshKey;
   final VoidCallback? onOpenLive;
-  final VoidCallback? onOpenMessages;
+  final VoidCallback? onOpenDiscover;
 
   const VideoFeedScreen({
     super.key,
@@ -30,7 +30,7 @@ class VideoFeedScreen extends StatefulWidget {
     this.isTabActive = true,
     this.refreshKey = 0,
     this.onOpenLive,
-    this.onOpenMessages,
+    this.onOpenDiscover,
   });
 
   @override
@@ -58,7 +58,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _hasMore = true;
   int _lastRefreshKey = 0;
   bool _showFollowing = false; // onglet Abonnements
-  int _unreadMsgs = 0; // badge sur l'icône Messages
 
   // Cache des contrôleurs : seulement current + next pour économiser la bande passante
   final Map<int, VideoPlayerController> _controllers = {};
@@ -75,14 +74,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // Zone Dark : bloque captures d'écran + enregistrement d'écran
     if (widget.isDark) ScreenSecurity.enable();
     _loadVideos();
-    _loadUnread();
-  }
-
-  // Nombre total de messages non lus (badge sur l'icône Messages)
-  Future<void> _loadUnread() async {
-    if (widget.isDark) return;
-    final n = await ApiService.getUnreadMessages();
-    if (mounted && n != _unreadMsgs) setState(() => _unreadMsgs = n);
   }
 
   @override
@@ -176,11 +167,13 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
-  // Nettoie les contrôleurs trop loin de l'index actuel : leur dispose()
-  // COUPE aussi leurs téléchargements en cours (bande passante libérée).
+  // Nettoie les contrôleurs : on ne garde QUE la vidéo courante et la
+  // suivante. La vidéo PRÉCÉDENTE est libérée aussitôt — son dispose() coupe
+  // tout téléchargement/bufferisation en cours → aucune data gaspillée pour
+  // une vidéo déjà regardée qu'on ne reverra pas en remontant.
   void _cleanupControllers(int currentIdx) {
     final toRemove = _controllers.keys
-        .where((i) => (i - currentIdx).abs() > 1)
+        .where((i) => i != currentIdx && i != currentIdx + 1)
         .toList();
     for (final i in toRemove) {
       _controllers[i]?.dispose();
@@ -362,17 +355,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                     icon: const _LiveIcon(),
                     onPressed: widget.onOpenLive,
                   ),
-                if (widget.onOpenMessages != null)
+                if (widget.onOpenDiscover != null)
                   IconButton(
-                    icon: _BadgeIcon(
-                      icon: Icons.send_outlined,
-                      count: _unreadMsgs,
-                    ),
-                    onPressed: () {
-                      widget.onOpenMessages!();
-                      // Rafraîchit le badge au retour de la messagerie
-                      Future.delayed(const Duration(seconds: 1), _loadUnread);
-                    },
+                    icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 25),
+                    tooltip: 'Découvrir',
+                    onPressed: widget.onOpenDiscover,
                   ),
                 IconButton(
                   icon: const Icon(Icons.search, color: Colors.white, size: 26),
@@ -1692,70 +1679,34 @@ class _LiveIconState extends State<_LiveIcon>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const Icon(Icons.live_tv_outlined, color: Colors.white, size: 25),
-        Positioned(
-          top: -2,
-          right: -2,
-          child: FadeTransition(
-            opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: Colors.redAccent,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: Colors.redAccent.withValues(alpha: 0.7), blurRadius: 6),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Icône avec badge numérique (messages non lus) ───────────────────────────
-
-class _BadgeIcon extends StatelessWidget {
-  final IconData icon;
-  final int count;
-  const _BadgeIcon({required this.icon, required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon, color: Colors.white, size: 25),
-        if (count > 0)
+    // Taille fixe : le point rouge reste À L'INTÉRIEUR des limites (pas d'overflow).
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.live_tv_outlined, color: Colors.white, size: 25),
           Positioned(
-            top: -6,
-            right: -8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: AppColors.error,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: Colors.black, width: 1.5),
-              ),
-              constraints: const BoxConstraints(minWidth: 17),
-              child: Text(
-                count > 99 ? '99+' : '$count',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+            top: 1,
+            right: 1,
+            child: FadeTransition(
+              opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.redAccent.withValues(alpha: 0.7), blurRadius: 6),
+                  ],
                 ),
               ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }

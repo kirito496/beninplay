@@ -25,14 +25,26 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   int _feedRefreshKey = 0;
+  int _unreadMsgs = 0; // badge sur l'onglet Messages
 
   List<Widget> get _screens => [
-    VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenMessages: _openMessages),
-    const DiscoverScreen(),
+    VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenDiscover: _openDiscover),
+    const MessagesScreen(),
     const SizedBox(),
     const WalletScreen(),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    final n = await ApiService.getUnreadMessages();
+    if (mounted && n != _unreadMsgs) setState(() => _unreadMsgs = n);
+  }
 
   void _onNavTap(int index) {
     if (index == 2) {
@@ -40,6 +52,12 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() => _currentIndex = index);
+    // En ouvrant Messages, les non-lus seront lus → on efface le badge après coup
+    if (index == 1) Future.delayed(const Duration(seconds: 2), _loadUnread);
+  }
+
+  void _openDiscover() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoverScreen()));
   }
 
   Future<void> _pickVideo(ImageSource source) async {
@@ -70,10 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
-  }
-
-  void _openMessages() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const MessagesScreen()));
   }
 
   void _openLives() {
@@ -495,10 +509,10 @@ class _HomeScreenState extends State<HomeScreen> {
               activeIcon: Icon(Icons.home),
               label: AppStrings.navHome,
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.explore_outlined),
-              activeIcon: Icon(Icons.explore),
-              label: AppStrings.navDiscover,
+            BottomNavigationBarItem(
+              icon: _TabBadge(icon: Icons.forum_outlined, count: _unreadMsgs),
+              activeIcon: _TabBadge(icon: Icons.forum, count: _unreadMsgs),
+              label: 'Messages',
             ),
             const BottomNavigationBarItem(
               // Bouton Publier bien visible (façon TikTok) : pastille en
@@ -640,6 +654,43 @@ class _PulsingPublishButtonState extends State<_PulsingPublishButton>
           ),
         );
       },
+    );
+  }
+}
+
+// ── Icône d'onglet avec pastille de non-lus (Messages) ──────────────────────
+
+class _TabBadge extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  const _TabBadge({required this.icon, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (count > 0)
+          Positioned(
+            top: -5,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.error,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: const Color(0xFF0A0A0A), width: 1.5),
+              ),
+              constraints: const BoxConstraints(minWidth: 16),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
