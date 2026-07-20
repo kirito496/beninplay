@@ -400,14 +400,20 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                   Text('🔞', style: TextStyle(fontSize: 18)),
                 ],
               )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _TabButton(label: 'Pour toi ✨', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
-                  const SizedBox(width: 20),
-                  _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
-                ],
+            // FittedBox : si jamais le titre est trop large, il rétrécit au
+            // lieu de déborder → plus jamais d'« OVERFLOWED ».
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
+                    const SizedBox(width: 18),
+                    _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
+                  ],
+                ),
               ),
+        titleSpacing: 12,
         actions: widget.isDark
             ? const [
                 Padding(
@@ -416,21 +422,33 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                 ),
               ]
             : [
+                // Icônes compactes (padding réduit) pour laisser de la place
+                // au titre et éviter tout débordement.
                 if (widget.onOpenLive != null)
                   IconButton(
                     icon: const _LiveIcon(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                    splashRadius: 20,
                     onPressed: widget.onOpenLive,
                   ),
                 if (widget.onOpenDiscover != null)
                   IconButton(
-                    icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 25),
+                    icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 24),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                    splashRadius: 20,
                     tooltip: 'Découvrir',
                     onPressed: widget.onOpenDiscover,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.search, color: Colors.white, size: 26),
+                  icon: const Icon(Icons.search, color: Colors.white, size: 25),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                  splashRadius: 20,
                   onPressed: () => _showSearch(context),
                 ),
+                const SizedBox(width: 6),
               ],
       ),
       body: _isLoading
