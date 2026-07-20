@@ -98,10 +98,47 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 : null,
                           ),
                           title: Text('@${c.otherUserName}',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
-                          subtitle: Text('Appuie pour ouvrir la discussion',
-                              style: const TextStyle(color: Colors.white38, fontSize: 12), overflow: TextOverflow.ellipsis),
-                          trailing: Text(_formatTime(c.updatedAt), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: c.unread > 0 ? FontWeight.bold : FontWeight.w600,
+                                  fontSize: 15)),
+                          subtitle: Text(
+                              c.lastMessage == null
+                                  ? 'Appuie pour ouvrir la discussion'
+                                  : '${c.lastMessageMine ? 'Toi : ' : ''}${c.lastMessage}',
+                              style: TextStyle(
+                                  color: c.unread > 0 ? Colors.white : Colors.white38,
+                                  fontWeight: c.unread > 0 ? FontWeight.w600 : FontWeight.normal,
+                                  fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(_formatTime(c.updatedAt),
+                                  style: TextStyle(
+                                      color: c.unread > 0 ? AppColors.primary : Colors.white38,
+                                      fontSize: 11)),
+                              if (c.unread > 0) ...[
+                                const SizedBox(height: 5),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    c.unread > 99 ? '99+' : '${c.unread}',
+                                    style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                           onTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => ChatScreen(
                               conversationId: c.id,

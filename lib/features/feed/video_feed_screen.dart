@@ -13,6 +13,7 @@ import '../../shared/widgets/momo_pay_sheet.dart';
 import '../../shared/widgets/tip_sheet.dart';
 import '../profile/creator_profile_screen.dart';
 import '../upload/video_effects.dart';
+import '../../shared/widgets/bp_logo.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -57,6 +58,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _hasMore = true;
   int _lastRefreshKey = 0;
   bool _showFollowing = false; // onglet Abonnements
+  int _unreadMsgs = 0; // badge sur l'icône Messages
 
   // Cache des contrôleurs : seulement current + next pour économiser la bande passante
   final Map<int, VideoPlayerController> _controllers = {};
@@ -73,6 +75,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // Zone Dark : bloque captures d'écran + enregistrement d'écran
     if (widget.isDark) ScreenSecurity.enable();
     _loadVideos();
+    _loadUnread();
+  }
+
+  // Nombre total de messages non lus (badge sur l'icône Messages)
+  Future<void> _loadUnread() async {
+    if (widget.isDark) return;
+    final n = await ApiService.getUnreadMessages();
+    if (mounted && n != _unreadMsgs) setState(() => _unreadMsgs = n);
   }
 
   @override
@@ -334,7 +344,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
+                  _TabButton(label: 'Pour toi ✨', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
                   const SizedBox(width: 20),
                   _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
                 ],
@@ -347,6 +357,23 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                 ),
               ]
             : [
+                if (widget.onOpenLive != null)
+                  IconButton(
+                    icon: const _LiveIcon(),
+                    onPressed: widget.onOpenLive,
+                  ),
+                if (widget.onOpenMessages != null)
+                  IconButton(
+                    icon: _BadgeIcon(
+                      icon: Icons.send_outlined,
+                      count: _unreadMsgs,
+                    ),
+                    onPressed: () {
+                      widget.onOpenMessages!();
+                      // Rafraîchit le badge au retour de la messagerie
+                      Future.delayed(const Duration(seconds: 1), _loadUnread);
+                    },
+                  ),
                 IconButton(
                   icon: const Icon(Icons.search, color: Colors.white, size: 26),
                   onPressed: () => _showSearch(context),
@@ -354,7 +381,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(child: _PulsingLogo())
           : _videos.isEmpty
           ? Center(
         child: Column(
@@ -1589,6 +1616,146 @@ class _RotatingDiskState extends State<_RotatingDisk>
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Logo pulsant (chargement "hypnotique" du fil) ────────────────────────────
+
+class _PulsingLogo extends StatefulWidget {
+  const _PulsingLogo();
+
+  @override
+  State<_PulsingLogo> createState() => _PulsingLogoState();
+}
+
+class _PulsingLogoState extends State<_PulsingLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Container(
+          padding: const EdgeInsets.all(26),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.25 + t * 0.35),
+                blurRadius: 30 + t * 40,
+                spreadRadius: 4 + t * 10,
+              ),
+            ],
+          ),
+          child: Transform.scale(
+            scale: 0.92 + t * 0.16,
+            child: const BpLogo(size: 74),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Icône Live avec point rouge qui "respire" ───────────────────────────────
+
+class _LiveIcon extends StatefulWidget {
+  const _LiveIcon();
+
+  @override
+  State<_LiveIcon> createState() => _LiveIconState();
+}
+
+class _LiveIconState extends State<_LiveIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const Icon(Icons.live_tv_outlined, color: Colors.white, size: 25),
+        Positioned(
+          top: -2,
+          right: -2,
+          child: FadeTransition(
+            opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: Colors.redAccent.withValues(alpha: 0.7), blurRadius: 6),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Icône avec badge numérique (messages non lus) ───────────────────────────
+
+class _BadgeIcon extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  const _BadgeIcon({required this.icon, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon, color: Colors.white, size: 25),
+        if (count > 0)
+          Positioned(
+            top: -6,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: AppColors.error,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: Colors.black, width: 1.5),
+              ),
+              constraints: const BoxConstraints(minWidth: 17),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

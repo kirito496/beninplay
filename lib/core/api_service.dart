@@ -716,6 +716,20 @@ class ApiService {
     }
   }
 
+  /// Nombre total de messages non lus (badge sur l'icône Messages du fil)
+  static Future<int> getUnreadMessages() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/chat/unread'),
+        headers: await _headers(auth: true),
+      );
+      final data = jsonDecode(res.body);
+      return (data['unread'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Ouvre (ou crée) une conversation avec un utilisateur → {conversationId, otherUser}
   static Future<Map<String, dynamic>> openConversation(String userId) async {
     final res = await http.get(

@@ -47,6 +47,9 @@ class Conversation {
   final String otherUserName;
   final String? otherAvatar;
   final DateTime updatedAt;
+  final String? lastMessage; // aperçu du dernier message
+  final bool lastMessageMine; // true si c'est moi qui l'ai envoyé
+  final int unread; // messages non lus dans cette conversation
 
   const Conversation({
     required this.id,
@@ -54,18 +57,25 @@ class Conversation {
     required this.otherUserName,
     this.otherAvatar,
     required this.updatedAt,
+    this.lastMessage,
+    this.lastMessageMine = false,
+    this.unread = 0,
   });
 
   String get initial => otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : '?';
 
   factory Conversation.fromJson(Map<String, dynamic> j) {
     final other = j['otherUser'] is Map ? Map<String, dynamic>.from(j['otherUser']) : <String, dynamic>{};
+    final lm = j['lastMessage'] is Map ? Map<String, dynamic>.from(j['lastMessage']) : null;
     return Conversation(
       id: (j['id'] ?? '').toString(),
       otherUserId: (other['id'] ?? '').toString(),
       otherUserName: (other['username'] ?? 'Utilisateur').toString(),
       otherAvatar: other['avatar_url']?.toString(),
       updatedAt: DateTime.tryParse((j['updatedAt'] ?? '').toString()) ?? DateTime.now(),
+      lastMessage: lm?['content']?.toString(),
+      lastMessageMine: lm?['mine'] == true,
+      unread: (j['unread'] as num?)?.toInt() ?? 0,
     );
   }
 }

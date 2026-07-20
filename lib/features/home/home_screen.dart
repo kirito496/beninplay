@@ -87,9 +87,10 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -151,6 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
           ],
+          ),
         ),
       ),
     );
@@ -498,29 +500,10 @@ class _HomeScreenState extends State<HomeScreen> {
               activeIcon: Icon(Icons.explore),
               label: AppStrings.navDiscover,
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               // Bouton Publier bien visible (façon TikTok) : pastille en
-              // dégradé vert→jaune avec halo lumineux.
-              icon: Container(
-                width: 52,
-                height: 34,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF00E676), AppColors.primary],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.55),
-                      blurRadius: 12,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
-              ),
+              // dégradé vert avec halo lumineux qui "respire".
+              icon: _PulsingPublishButton(),
               label: AppStrings.navUpload,
             ),
             const BottomNavigationBarItem(
@@ -604,3 +587,59 @@ class _UploadOption extends StatelessWidget {
   }
 }
 
+
+// ── Bouton Publier avec halo qui "respire" (attire l'œil vers la création) ──
+
+class _PulsingPublishButton extends StatefulWidget {
+  const _PulsingPublishButton();
+
+  @override
+  State<_PulsingPublishButton> createState() => _PulsingPublishButtonState();
+}
+
+class _PulsingPublishButtonState extends State<_PulsingPublishButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Container(
+          width: 52,
+          height: 34,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF00E676), AppColors.primary],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35 + t * 0.35),
+                blurRadius: 10 + t * 10,
+                spreadRadius: t * 2,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Transform.scale(
+            scale: 1.0 + t * 0.08,
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+          ),
+        );
+      },
+    );
+  }
+}
