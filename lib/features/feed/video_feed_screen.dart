@@ -123,7 +123,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   // Initialise le contrôleur pour un index donné.
   //
   // CACHE DISQUE : la vidéo est d'abord TÉLÉCHARGÉE EN ENTIER sur le téléphone
-  // (VideoCache.getFile), puis lue depuis ce fichier local. Donc :
+  // (VideoCache), puis lue depuis ce fichier local. Donc :
   //  • la lecture en boucle ne reconsomme aucune data
   //  • re-scroller vers une vidéo déjà vue est instantané et hors-ligne
   //
@@ -141,8 +141,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     VideoPlayerController? ctrl;
     try {
       // 1) Télécharge la vidéo EN ENTIER vers le disque (ou récupère le cache).
-      //    Tant que ce n'est pas fini, la suivante ne démarre pas.
-      final file = await VideoCache.getFile(video.cacheUrl);
+      //    La vidéo REGARDÉE (index courant) = priorité HAUTE : elle passe
+      //    devant tous les préchargements et reçoit toute la bande passante.
+      final isCurrent = index == _currentIndex;
+      final file = isCurrent
+          ? await VideoCache.getForPlayback(video.cacheUrl)
+          : await VideoCache.prefetch(video.cacheUrl);
 
       // Zappée pendant le téléchargement (et trop loin) → on abandonne.
       // Le fichier reste en cache pour un futur affichage (rien de perdu).
@@ -212,7 +216,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       try {
         final url = _videos[i].cacheUrl;
         if (!await VideoCache.isCached(url)) {
-          await VideoCache.getFile(url); // attend la fin AVANT la suivante
+          // Priorité basse : si tu arrives entre-temps sur une vidéo non
+          // cachée, SON téléchargement (priorité haute) passera devant.
+          await VideoCache.prefetch(url); // attend la fin AVANT la suivante
         }
       } catch (_) { /* réseau/disque : on tente la suivante */ }
     }
