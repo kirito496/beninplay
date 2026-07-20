@@ -114,167 +114,167 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: LayoutBuilder(builder: (context, cts) {
-          final area = Size(cts.maxWidth, cts.maxHeight);
-          return Stack(
-            children: [
-              // ── Aperçu vidéo (avec filtre) ──
-              Positioned.fill(
-                child: _ready && _ctrl != null
-                    ? VideoFilters.apply(
-                        _filter,
-                        FittedBox(
-                          fit: _ctrl!.value.aspectRatio < 1.0
-                              ? BoxFit.cover
-                              : BoxFit.contain,
-                          child: SizedBox(
-                            width: _ctrl!.value.size.width,
-                            height: _ctrl!.value.size.height,
-                            child: VideoPlayer(_ctrl!),
-                          ),
-                        ),
-                      )
-                    : _previewFailed
-                        // Aperçu impossible → on affiche un repli mais on laisse
-                        // publier (le bouton Suivant reste actif).
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.movie_outlined,
-                                    color: Colors.white38, size: 56),
-                                SizedBox(height: 12),
-                                Text('Aperçu indisponible',
-                                    style: TextStyle(color: Colors.white54)),
-                                SizedBox(height: 4),
-                                Text('Tu peux quand même publier ta vidéo',
-                                    style: TextStyle(
-                                        color: Colors.white38, fontSize: 12)),
-                              ],
-                            ),
-                          )
-                        : const Center(
-                            child: CircularProgressIndicator(
-                                color: AppColors.primary)),
-              ),
-
-              // ── Overlays déplaçables ──
-              ..._items.map((it) => _DraggableItem(
-                    item: it,
-                    area: area,
-                    onMove: (dx, dy, overTrash) => setState(() {
-                      it.dx = dx;
-                      it.dy = dy;
-                      _overTrash = overTrash;
-                    }),
-                    onDrop: () {
-                      if (_overTrash) {
-                        setState(() => _items.remove(it));
-                      }
-                      setState(() => _overTrash = false);
-                    },
-                  )),
-
-              // ── Barre haute : retour + Suivant ──
-              Positioned(
-                top: 8,
-                left: 8,
-                right: 8,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _round(Icons.close, () => Navigator.pop(context)),
-                    ElevatedButton.icon(
-                      // Toujours actif : on ne bloque JAMAIS l'accès au
-                      // formulaire de publication, même si l'aperçu charge encore.
-                      onPressed: _finish,
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: const Text('Suivant'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── Outils (droite) : texte, emoji ──
-              Positioned(
-                top: 70,
-                right: 10,
-                child: Column(
-                  children: [
-                    _tool(Icons.title, 'Texte', _addText),
-                    const SizedBox(height: 14),
-                    _tool(Icons.emoji_emotions_outlined, 'Emoji', _addEmoji),
-                  ],
-                ),
-              ),
-
-              // ── Corbeille (visible en glissant un élément) ──
-              if (_overTrash)
-                Positioned(
-                  bottom: 120,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.delete, color: Colors.white),
+        child: Column(
+          children: [
+            // ══ BARRE HAUTE (toujours visible) : Fermer + Suivant ══
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _round(Icons.close, () => Navigator.pop(context)),
+                  ElevatedButton.icon(
+                    onPressed: _finish, // toujours actif
+                    icon: const Icon(Icons.arrow_forward, size: 18),
+                    label: const Text('Suivant'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24)),
                     ),
                   ),
-                ),
+                ],
+              ),
+            ),
 
-              // ── Carrousel de filtres (bas) ──
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 12,
-                child: SizedBox(
-                  height: 64,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    children: VideoFilters.presets.keys.map((name) {
-                      final sel = name == _filter;
-                      return GestureDetector(
-                        onTap: () => setState(() => _filter = name),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 5),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: sel
-                                ? AppColors.primary
-                                : Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Center(
-                            child: Text(
-                              VideoFilters.labels[name] ?? name,
-                              style: TextStyle(
-                                color: sel ? Colors.black : Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+            // ══ ZONE VIDÉO (au milieu) : aperçu + overlays + outils ══
+            Expanded(
+              child: LayoutBuilder(builder: (context, cts) {
+                final area = Size(cts.maxWidth, cts.maxHeight);
+                return Stack(
+                  children: [
+                    // Aperçu vidéo (avec filtre)
+                    Positioned.fill(
+                      child: _ready && _ctrl != null
+                          ? VideoFilters.apply(
+                              _filter,
+                              FittedBox(
+                                fit: _ctrl!.value.aspectRatio < 1.0
+                                    ? BoxFit.cover
+                                    : BoxFit.contain,
+                                child: SizedBox(
+                                  width: _ctrl!.value.size.width,
+                                  height: _ctrl!.value.size.height,
+                                  child: VideoPlayer(_ctrl!),
+                                ),
                               ),
+                            )
+                          : _previewFailed
+                              ? const Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.movie_outlined,
+                                          color: Colors.white38, size: 56),
+                                      SizedBox(height: 12),
+                                      Text('Aperçu indisponible',
+                                          style: TextStyle(color: Colors.white54)),
+                                      SizedBox(height: 4),
+                                      Text('Tu peux quand même publier ta vidéo',
+                                          style: TextStyle(
+                                              color: Colors.white38, fontSize: 12)),
+                                    ],
+                                  ),
+                                )
+                              : const Center(
+                                  child: CircularProgressIndicator(
+                                      color: AppColors.primary)),
+                    ),
+
+                    // Overlays déplaçables (texte / emoji)
+                    ..._items.map((it) => _DraggableItem(
+                          item: it,
+                          area: area,
+                          onMove: (dx, dy, overTrash) => setState(() {
+                            it.dx = dx;
+                            it.dy = dy;
+                            _overTrash = overTrash;
+                          }),
+                          onDrop: () {
+                            if (_overTrash) {
+                              setState(() => _items.remove(it));
+                            }
+                            setState(() => _overTrash = false);
+                          },
+                        )),
+
+                    // Outils (droite) : Texte, Emoji
+                    Positioned(
+                      top: 12,
+                      right: 10,
+                      child: Column(
+                        children: [
+                          _tool(Icons.title, 'Texte', _addText),
+                          const SizedBox(height: 14),
+                          _tool(Icons.emoji_emotions_outlined, 'Emoji', _addEmoji),
+                        ],
+                      ),
+                    ),
+
+                    // Corbeille (visible en glissant un élément)
+                    if (_overTrash)
+                      Positioned(
+                        bottom: 20,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: const BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
                             ),
+                            child: const Icon(Icons.delete, color: Colors.white),
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
+                      ),
+                  ],
+                );
+              }),
+            ),
+
+            // ══ BARRE BASSE (toujours visible) : filtres ══
+            Container(
+              height: 78,
+              width: double.infinity,
+              color: Colors.black,
+              alignment: Alignment.center,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: VideoFilters.presets.keys.map((name) {
+                  final sel = name == _filter;
+                  return GestureDetector(
+                    onTap: () => setState(() => _filter = name),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? AppColors.primary
+                            : Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Center(
+                        child: Text(
+                          VideoFilters.labels[name] ?? name,
+                          style: TextStyle(
+                            color: sel ? Colors.black : Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
-            ],
-          );
-        }),
+            ),
+          ],
+        ),
       ),
     );
   }
