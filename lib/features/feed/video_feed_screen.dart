@@ -144,9 +144,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       //    La vidéo REGARDÉE (index courant) = priorité HAUTE : elle passe
       //    devant tous les préchargements et reçoit toute la bande passante.
       final isCurrent = index == _currentIndex;
+      // Choix HD / 480p selon la vitesse de connexion mesurée.
+      final url = video.cacheUrlFor(fast: VideoCache.fastConnection);
       final file = isCurrent
-          ? await VideoCache.getForPlayback(video.cacheUrl)
-          : await VideoCache.prefetch(video.cacheUrl);
+          ? await VideoCache.getForPlayback(url)
+          : await VideoCache.prefetch(url);
 
       // Zappée pendant le téléchargement (et trop loin) → on abandonne.
       // Le fichier reste en cache pour un futur affichage (rien de perdu).
@@ -214,7 +216,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         return;
       }
       try {
-        final url = _videos[i].cacheUrl;
+        final url = _videos[i].cacheUrlFor(fast: VideoCache.fastConnection);
         if (!await VideoCache.isCached(url)) {
           // Priorité basse : si tu arrives entre-temps sur une vidéo non
           // cachée, SON téléchargement (priorité haute) passera devant.

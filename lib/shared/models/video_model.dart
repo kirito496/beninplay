@@ -60,11 +60,21 @@ class VideoModel {
     return AppConfig.cdn(u);
   }
 
-  /// URL à mettre en cache disque : TOUJOURS le MP4 progressif (un seul
-  /// fichier, donc cachable — contrairement au HLS fait de segments). C'est
-  /// ce qu'utilise le lecteur pour télécharger la vidéo en entier sur le
-  /// téléphone puis la lire hors-ligne.
-  String get cacheUrl => AppConfig.cdn(videoUrl);
+  /// MP4 HD (qualité d'origine) — utilisé quand la connexion est bonne.
+  String get hdUrl => AppConfig.cdn(videoUrl);
+
+  /// MP4 480p léger (généré par le serveur, stocké dans hls_url) — utilisé
+  /// quand la connexion est lente. Null tant que la version légère n'existe pas.
+  String? get lightUrl =>
+      (hlsUrl != null && hlsUrl!.isNotEmpty) ? AppConfig.cdn(hlsUrl!) : null;
+
+  /// URL à mettre en cache disque selon la connexion :
+  ///  • connexion rapide → HD
+  ///  • connexion lente → 480p léger (repli sur HD si la version légère
+  ///    n'est pas encore prête).
+  /// Chaque version est un MP4 unique, donc entièrement cachable sur le disque.
+  String cacheUrlFor({required bool fast}) =>
+      fast ? hdUrl : (lightUrl ?? hdUrl);
 
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',

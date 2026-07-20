@@ -34,6 +34,18 @@ class VideoCache {
   static final Map<String, _Job> _pending = {}; // dé-doublonne par URL
   static bool _busy = false;
 
+  // ── Estimation de la vitesse de connexion (octets/seconde) ────────────────
+  // Mesurée sur les vrais téléchargements de vidéos. Sert à choisir HD ou 480p.
+  static double? _speedBps;
+
+  /// Vrai quand la connexion est assez rapide pour la HD (> ~300 Ko/s).
+  /// Par défaut (aucune mesure encore) : false → on démarre en 480p léger,
+  /// puis on passe en HD dès qu'une mesure confirme une bonne connexion.
+  static bool get fastConnection => _speedBps != null && _speedBps! > 300 * 1024;
+
+  /// Débit estimé en Ko/s (pour affichage éventuel). Null si pas encore mesuré.
+  static double? get speedKbps => _speedBps == null ? null : _speedBps! / 1024;
+
   /// Vidéo à lire MAINTENANT : priorité haute, passe devant les préchargements.
   static Future<File> getForPlayback(String url) => _enqueue(url, high: true);
 
@@ -67,7 +79,12 @@ class VideoCache {
       while (_high.isNotEmpty || _low.isNotEmpty) {
         final job = _high.isNotEmpty ? _high.removeFirst() : _low.removeFirst();
         try {
+          // Téléchargement réel (pas déjà en cache) ? → on mesure le débit.
+          final already = (await _manager.getFileFromCache(job.url)) != null;
+          final sw = Stopwatch()..start();
           final file = await _manager.getSingleFile(job.url);
+          sw.stop();
+          if (!already) await _measure(file, sw.elapsedMilliseconds);
           job.completer.complete(file);
         } catch (e) {
           job.completer.completeError(e);
@@ -78,6 +95,20 @@ class VideoCache {
     } finally {
       _busy = false;
     }
+  }
+
+  // Met à jour l'estimation de vitesse à partir d'un vrai téléchargement.
+  static Future<void> _measure(File file, int elapsedMs) async {
+    try {
+      final bytes = await file.length();
+      final secs = elapsedMs / 1000.0;
+      // On ignore les mesures trop courtes/petites (peu fiables).
+      if (secs > 0.3 && bytes > 150 * 1024) {
+        final bps = bytes / secs;
+        // Moyenne glissante douce pour lisser les à-coups du réseau.
+        _speedBps = _speedBps == null ? bps : (_speedBps! * 0.5 + bps * 0.5);
+      }
+    } catch (_) {}
   }
 
   /// Vrai si la vidéo est déjà entièrement présente sur le disque.
