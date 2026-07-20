@@ -42,6 +42,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   }
 
   Future<void> _init() async {
+    // Sécurité : si l'aperçu ne se charge pas en 7 s, on affiche le repli
+    // (l'écran n'est JAMAIS bloqué en noir, la publication reste possible).
+    Future.delayed(const Duration(seconds: 7), () {
+      if (mounted && !_ready) setState(() => _previewFailed = true);
+    });
     try {
       final c = VideoPlayerController.file(widget.videoFile);
       _ctrl = c;
@@ -49,7 +54,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       await c.setLooping(true);
       await c.setVolume(0);
       await c.play();
-      if (mounted) setState(() => _ready = true);
+      if (mounted) setState(() { _ready = true; _previewFailed = false; });
     } catch (e) {
       // L'aperçu a échoué : on NE bloque PAS la publication. La vidéo reste
       // valable, l'utilisateur peut choisir un filtre / du texte et publier.
@@ -141,7 +146,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
 
             // ══ ZONE VIDÉO (au milieu) : aperçu + overlays + outils ══
             Expanded(
-              child: LayoutBuilder(builder: (context, cts) {
+              child: Container(
+                // Fond gris foncé (jamais tout noir) : on voit qu'on est bien
+                // dans l'éditeur même si l'aperçu met du temps à charger.
+                color: const Color(0xFF141414),
+                child: LayoutBuilder(builder: (context, cts) {
                 final area = Size(cts.maxWidth, cts.maxHeight);
                 return Stack(
                   children: [
@@ -233,6 +242,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                   ],
                 );
               }),
+              ),
             ),
 
             // ══ BARRE BASSE (toujours visible) : filtres ══
