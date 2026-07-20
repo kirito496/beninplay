@@ -24,6 +24,7 @@ class VideoEditorScreen extends StatefulWidget {
 class _VideoEditorScreenState extends State<VideoEditorScreen> {
   VideoPlayerController? _ctrl;
   bool _ready = false;
+  bool _previewFailed = false; // l'aperçu n'a pas pu se charger (on continue quand même)
   String _filter = 'aucun';
   final List<VideoOverlayItem> _items = [];
   bool _overTrash = false;
@@ -41,13 +42,19 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   }
 
   Future<void> _init() async {
-    final c = VideoPlayerController.file(widget.videoFile);
-    _ctrl = c;
-    await c.initialize();
-    await c.setLooping(true);
-    await c.setVolume(0);
-    await c.play();
-    if (mounted) setState(() => _ready = true);
+    try {
+      final c = VideoPlayerController.file(widget.videoFile);
+      _ctrl = c;
+      await c.initialize();
+      await c.setLooping(true);
+      await c.setVolume(0);
+      await c.play();
+      if (mounted) setState(() => _ready = true);
+    } catch (e) {
+      // L'aperçu a échoué : on NE bloque PAS la publication. La vidéo reste
+      // valable, l'utilisateur peut choisir un filtre / du texte et publier.
+      if (mounted) setState(() => _previewFailed = true);
+    }
   }
 
   @override
@@ -127,9 +134,28 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                           ),
                         ),
                       )
-                    : const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.primary)),
+                    : _previewFailed
+                        // Aperçu impossible → on affiche un repli mais on laisse
+                        // publier (le bouton Suivant reste actif).
+                        ? const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.movie_outlined,
+                                    color: Colors.white38, size: 56),
+                                SizedBox(height: 12),
+                                Text('Aperçu indisponible',
+                                    style: TextStyle(color: Colors.white54)),
+                                SizedBox(height: 4),
+                                Text('Tu peux quand même publier ta vidéo',
+                                    style: TextStyle(
+                                        color: Colors.white38, fontSize: 12)),
+                              ],
+                            ),
+                          )
+                        : const Center(
+                            child: CircularProgressIndicator(
+                                color: AppColors.primary)),
               ),
 
               // ── Overlays déplaçables ──
@@ -159,7 +185,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                   children: [
                     _round(Icons.close, () => Navigator.pop(context)),
                     ElevatedButton.icon(
-                      onPressed: _ready ? _finish : null,
+                      // Toujours actif : on ne bloque JAMAIS l'accès au
+                      // formulaire de publication, même si l'aperçu charge encore.
+                      onPressed: _finish,
                       icon: const Icon(Icons.arrow_forward, size: 18),
                       label: const Text('Suivant'),
                       style: ElevatedButton.styleFrom(
