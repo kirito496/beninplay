@@ -47,6 +47,30 @@ class VideoFilters {
       0, 0, 1.1, 0, 20,
       0, 0, 0, 1, 0,
     ],
+    'sepia': [
+      0.393, 0.769, 0.189, 0, 0,
+      0.349, 0.686, 0.168, 0, 0,
+      0.272, 0.534, 0.131, 0, 0,
+      0, 0, 0, 1, 0,
+    ],
+    'dramatique': [
+      1.4, 0, 0, 0, -45,
+      0, 1.4, 0, 0, -45,
+      0, 0, 1.4, 0, -45,
+      0, 0, 0, 1, 0,
+    ],
+    'rose': [
+      1.12, 0, 0, 0, 18,
+      0, 0.95, 0, 0, 0,
+      0, 0, 1.05, 0, 12,
+      0, 0, 0, 1, 0,
+    ],
+    'cinema': [
+      1.05, 0, 0, 0, -8,
+      0, 1.0, 0, 0, 0,
+      0, 0, 1.15, 0, 14,
+      0, 0, 0, 1, 0,
+    ],
   };
 
   /// Noms affichés à l'utilisateur.
@@ -58,6 +82,10 @@ class VideoFilters {
     'froid': 'Froid',
     'vintage': 'Vintage',
     'clair': 'Clair',
+    'sepia': 'Sépia',
+    'dramatique': 'Drama',
+    'rose': 'Rose',
+    'cinema': 'Ciné',
   };
 
   /// Renvoie le [ColorFilter] correspondant, ou `null` si aucun/inconnu.
@@ -88,6 +116,8 @@ class VideoOverlayItem {
   double dy; // 0..1 (centre)
   double scale; // multiplicateur de taille
   final int color; // couleur du texte (ARGB), ignoré pour les emojis
+  final int bg; // fond du texte (ARGB) ; 0 = aucun (façon Canva)
+  final String style; // 'plain' | 'outline'
 
   VideoOverlayItem({
     required this.type,
@@ -96,6 +126,8 @@ class VideoOverlayItem {
     this.dy = 0.5,
     this.scale = 1.0,
     this.color = 0xFFFFFFFF,
+    this.bg = 0,
+    this.style = 'plain',
   });
 
   Map<String, dynamic> toJson() => {
@@ -105,6 +137,8 @@ class VideoOverlayItem {
         'dy': double.parse(dy.toStringAsFixed(4)),
         'scale': double.parse(scale.toStringAsFixed(3)),
         'color': color,
+        'bg': bg,
+        'style': style,
       };
 
   factory VideoOverlayItem.fromJson(Map<String, dynamic> j) => VideoOverlayItem(
@@ -114,10 +148,52 @@ class VideoOverlayItem {
         dy: (j['dy'] ?? 0.5).toDouble(),
         scale: (j['scale'] ?? 1.0).toDouble(),
         color: (j['color'] is int) ? j['color'] : 0xFFFFFFFF,
+        bg: (j['bg'] is int) ? j['bg'] : 0,
+        style: (j['style'] ?? 'plain').toString(),
       );
 
   /// Taille de base (avant [scale]) en pixels logiques.
   double get baseSize => type == 'emoji' ? 44 : 22;
+}
+
+/// Rendu d'un overlay (emoji ou texte stylé : couleur, contour, fond).
+/// Utilisé À LA FOIS par l'éditeur et par la lecture → l'aperçu = le résultat.
+/// L'appelant l'enveloppe dans `SizedBox(width: boxW)` + `Center` (retour ligne).
+Widget overlayContent(VideoOverlayItem it, double fontSize) {
+  if (it.type == 'emoji') {
+    return Text(it.value, style: TextStyle(fontSize: fontSize));
+  }
+  // Contour (façon Canva) : 4 ombres noires ; sinon ombre portée douce.
+  final List<Shadow> shadows = it.style == 'outline'
+      ? const [
+          Shadow(offset: Offset(-1.5, -1.5), color: Colors.black, blurRadius: 1),
+          Shadow(offset: Offset(1.5, -1.5), color: Colors.black, blurRadius: 1),
+          Shadow(offset: Offset(-1.5, 1.5), color: Colors.black, blurRadius: 1),
+          Shadow(offset: Offset(1.5, 1.5), color: Colors.black, blurRadius: 1),
+        ]
+      : const [Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1))];
+  Widget text = Text(
+    it.value,
+    textAlign: TextAlign.center,
+    softWrap: true,
+    style: TextStyle(
+      fontSize: fontSize,
+      color: Color(it.color),
+      fontWeight: FontWeight.w800,
+      shadows: shadows,
+    ),
+  );
+  if (it.bg != 0) {
+    text = Container(
+      padding: EdgeInsets.symmetric(horizontal: fontSize * 0.4, vertical: fontSize * 0.18),
+      decoration: BoxDecoration(
+        color: Color(it.bg),
+        borderRadius: BorderRadius.circular(fontSize * 0.35),
+      ),
+      child: text,
+    );
+  }
+  return text;
 }
 
 /// Dessine les overlays par-dessus une vidéo, en lecture seule (dans le fil).
@@ -138,21 +214,7 @@ class OverlayLayer extends StatelessWidget {
           // Même règle que l'éditeur : texte limité à 82% de la largeur (il
           // revient à la ligne), boîte centrée sur le point (dx, dy).
           final boxW = isEmoji ? fontSize * 1.4 : size.width * 0.82;
-          final child = isEmoji
-              ? Text(it.value, style: TextStyle(fontSize: fontSize))
-              : Text(
-                  it.value,
-                  textAlign: TextAlign.center,
-                  softWrap: true,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    color: Color(it.color),
-                    fontWeight: FontWeight.w700,
-                    shadows: const [
-                      Shadow(color: Colors.black87, blurRadius: 6, offset: Offset(0, 1)),
-                    ],
-                  ),
-                );
+          final child = overlayContent(it, fontSize);
           final left = (it.dx * size.width - boxW / 2)
               .clamp(0.0, (size.width - boxW).clamp(0.0, size.width));
           return Positioned(

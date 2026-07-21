@@ -183,6 +183,9 @@ class ApiService {
     List<String> tags = const [],
     String? filter, // filtre couleur (métadonnée, ré-appliqué à la lecture)
     String? overlays, // JSON des textes/emojis posés sur la vidéo
+    String? soundId, // "Utiliser ce son" : son réutilisé
+    String? duetSourceId, // Duo : vidéo source à composer côte à côte
+    String? stitchSourceId, // Stitch : vidéo source à enchaîner
     void Function(String)? onStatus,
     void Function(int percent)? onProgress,
   }) async {
@@ -236,6 +239,9 @@ class ApiService {
         'tags': tags.join(','),
         if (filter != null && filter.isNotEmpty) 'filter': filter,
         if (overlays != null && overlays.isNotEmpty) 'overlays': overlays,
+        if (soundId != null && soundId.isNotEmpty) 'sound_id': soundId,
+        if (duetSourceId != null && duetSourceId.isNotEmpty) 'duet_source_id': duetSourceId,
+        if (stitchSourceId != null && stitchSourceId.isNotEmpty) 'stitch_source_id': stitchSourceId,
         'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
         if (thumbPath != null)
           'thumbnail': await MultipartFile.fromFile(thumbPath, filename: 'thumb.jpg'),

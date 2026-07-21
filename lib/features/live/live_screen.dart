@@ -169,6 +169,9 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   bool _starting = false;
   bool _micOn = true;
   bool _camOn = true;
+  // Retouche visage (filtre beauté Agora) : 0 = off, 1 = naturel, 2 = glow.
+  // Activée en douceur par défaut → le diffuseur se sent mis en valeur.
+  int _beautyLevel = 1;
   int _viewers = 0;
   int _duration = 0;
   Timer? _timer;
@@ -259,6 +262,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       await engine.startPreview();
       await engine.setChannelProfile(ChannelProfileType.channelProfileLiveBroadcasting);
       await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+      // Filtre beauté (lissage de peau + éclat) — niveau doux par défaut.
+      await _applyBeauty(engine);
       await engine.joinChannel(
         token: token ?? '',
         channelId: channel,
@@ -280,6 +285,32 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       setState(() => _starting = false);
       _snack('Erreur Agora : $e');
     }
+  }
+
+  // Applique le niveau de retouche visage choisi (0 off / 1 naturel / 2 glow).
+  // Best-effort : si l'appareil ne supporte pas l'extension beauté, on ignore
+  // l'erreur (le live continue sans filtre).
+  Future<void> _applyBeauty([RtcEngine? e]) async {
+    final engine = e ?? _engine;
+    if (engine == null) return;
+    try {
+      if (_beautyLevel == 0) {
+        await engine.setBeautyEffectOptions(
+            enabled: false, options: const BeautyOptions());
+        return;
+      }
+      final soft = _beautyLevel == 1;
+      await engine.setBeautyEffectOptions(
+        enabled: true,
+        options: BeautyOptions(
+          lighteningContrastLevel: LighteningContrastLevel.lighteningContrastNormal,
+          lighteningLevel: soft ? 0.3 : 0.55, // éclaircit le teint
+          smoothnessLevel: soft ? 0.5 : 0.8, // lisse la peau (boutons, défauts)
+          rednessLevel: soft ? 0.1 : 0.2, // bonne mine
+          sharpnessLevel: 0.3,
+        ),
+      );
+    } catch (_) { /* appareil non supporté : pas bloquant */ }
   }
 
   Future<void> _stopLive() async {
@@ -432,11 +463,21 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                 setState(() => _camOn = !_camOn);
                 await _engine?.muteLocalVideoStream(!_camOn);
               }),
-              const SizedBox(width: 24),
+              const SizedBox(width: 18),
+              _ctrl(
+                Icons.auto_fix_high,
+                _beautyLevel == 0 ? 'Beauté off' : (_beautyLevel == 1 ? 'Naturel' : 'Glow ✨'),
+                _beautyLevel == 0 ? Colors.white54 : AppColors.primary,
+                () async {
+                  setState(() => _beautyLevel = (_beautyLevel + 1) % 3);
+                  await _applyBeauty();
+                },
+              ),
+              const SizedBox(width: 18),
               _ctrl(Icons.flip_camera_android, 'Retourner', Colors.white, () async {
                 await _engine?.switchCamera();
               }),
-              const SizedBox(width: 24),
+              const SizedBox(width: 18),
               _ctrl(Icons.stop_circle_outlined, 'Terminer', Colors.red, _confirmStop),
             ]),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 24),

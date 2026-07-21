@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/app_config.dart';
 import 'core/api_service.dart';
+import 'core/app_prefs.dart';
+import 'core/biometric.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
@@ -18,6 +20,7 @@ void main() async {
   );
   await SavedVideos.init(); // précharge les favoris (état des boutons 🔖)
   await SeenVideos.init(); // précharge les vidéos déjà vues (fil sans répétition)
+  await AppPrefs.init(); // réglages (notifs, confidentialité, langue, verrou)
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -54,20 +57,41 @@ class _SplashRouterState extends State<_SplashRouter> {
     _checkSession();
   }
 
+  bool _locked = false;
+
   Future<void> _checkSession() async {
     await Future.delayed(const Duration(milliseconds: 300));
     final token = await ApiService.getToken();
     if (!mounted) return;
     if (token != null && token.isNotEmpty) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      // Verrou biométrique activé → on demande l'empreinte avant d'entrer.
+      if (AppPrefs.biometricLock) {
+        await _unlockThenHome();
+      } else {
+        _goHome();
+      }
     } else {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
+    }
+  }
+
+  void _goHome() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
+  }
+
+  Future<void> _unlockThenHome() async {
+    final ok = await Biometric.confirm('Déverrouille BeninPlay');
+    if (!mounted) return;
+    if (ok) {
+      _goHome();
+    } else {
+      setState(() => _locked = true); // affiche l'écran de déverrouillage
     }
   }
 
@@ -84,13 +108,13 @@ class _SplashRouterState extends State<_SplashRouter> {
             colors: [Color(0xFF07200F), Colors.black],
           ),
         ),
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              BpLogo(size: 104),
-              SizedBox(height: 22),
-              Text(
+              const BpLogo(size: 104),
+              const SizedBox(height: 22),
+              const Text(
                 'BeninPlay',
                 style: TextStyle(
                   color: Colors.white,
@@ -99,20 +123,32 @@ class _SplashRouterState extends State<_SplashRouter> {
                   letterSpacing: 0.5,
                 ),
               ),
-              SizedBox(height: 6),
-              Text(
+              const SizedBox(height: 6),
+              const Text(
                 'Le divertissement béninois',
                 style: TextStyle(color: Colors.white54, fontSize: 14),
               ),
-              SizedBox(height: 44),
-              SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  color: Color(0xFF00E676),
-                  strokeWidth: 2.5,
+              const SizedBox(height: 44),
+              if (_locked)
+                ElevatedButton.icon(
+                  onPressed: _unlockThenHome,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Déverrouiller'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 46),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                )
+              else
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF00E676),
+                    strokeWidth: 2.5,
+                  ),
                 ),
-              ),
             ],
           ),
         ),

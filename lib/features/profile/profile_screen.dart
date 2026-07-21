@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -19,6 +20,9 @@ import '../discover/leaderboard_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../saved/saved_videos_screen.dart';
 import '../ai/ai_chat_screen.dart';
+import '../friends/add_friends_screen.dart';
+import '../settings/settings_screen.dart';
+import '../../core/app_prefs.dart';
 import 'creator_stats_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -407,27 +411,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 _ShareBtn(
                   icon: Icons.message,
-                  label: 'Message',
+                  label: 'SMS',
                   color: Colors.green,
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(Uri.parse(
+                        'sms:?body=${Uri.encodeComponent('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username')}'));
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.facebook,
                   label: 'Facebook',
                   color: const Color(0xFF1877F2),
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(
+                      Uri.parse(
+                          'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent('https://beninplay.app/@$username')}'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.send,
                   label: 'WhatsApp',
                   color: const Color(0xFF25D366),
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(
+                      Uri.parse(
+                          'https://wa.me/?text=${Uri.encodeComponent('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username')}'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.more_horiz,
                   label: 'Autre',
                   color: Colors.white54,
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Share.share('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username');
+                  },
                 ),
               ],
             ),
@@ -798,11 +823,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications', onTap: () {}),
-            _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité', onTap: () {}),
-            _SettingItem(icon: Icons.security, label: 'Sécurité du compte', onTap: () {}),
-            _SettingItem(icon: Icons.language, label: 'Langue : Français', onTap: () {}),
-            _SettingItem(icon: Icons.info_outline, label: 'À propos de BeninPlay', onTap: () {}),
+            _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications',
+                onTap: () { Navigator.pop(context); NotificationsSettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité',
+                onTap: () { Navigator.pop(context); PrivacySettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.security, label: 'Sécurité du compte',
+                onTap: () { Navigator.pop(context); SecuritySettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.language, label: 'Langue : ${AppPrefs.labelFor(AppPrefs.language.value)}',
+                onTap: () { Navigator.pop(context); LanguageSettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.info_outline, label: 'À propos de BeninPlay',
+                onTap: () { Navigator.pop(context); AboutScreen.open(context); }),
             const SizedBox(height: 8),
           ],
         ),
@@ -1279,6 +1309,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.smart_toy_outlined,
                     label: 'Assistant IA 🤖',
                     onTap: () => AiChatScreen.open(context),
+                  ),
+                  _MenuItem(
+                    icon: Icons.qr_code_2,
+                    label: 'Ajouter des amis',
+                    onTap: () => AddFriendsScreen.open(context),
                   ),
                   _MenuItem(
                     icon: Icons.bookmark_outline,

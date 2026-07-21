@@ -17,6 +17,10 @@ import '../../shared/widgets/bp_logo.dart';
 import '../../services/video_cache.dart';
 import '../../services/saved_videos.dart';
 import '../../services/seen_videos.dart';
+import '../search/search_screen.dart';
+import '../../services/sound_service.dart';
+import '../sounds/sound_page_screen.dart';
+import '../upload/quick_publish.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -509,15 +513,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   void _showSearch(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.normalSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const _SearchSheet(),
-    );
+    // Recherche à onglets réelle (Top / Comptes / Vidéos).
+    SearchScreen.open(context);
   }
 }
 
@@ -842,6 +839,19 @@ class _VideoPageState extends State<_VideoPage> {
     CreatorProfileScreen.open(context, widget.video.creatorId, name: widget.video.creatorName);
   }
 
+  // Ouvre la page du son de cette vidéo (toutes les vidéos qui l'utilisent).
+  Future<void> _openSound() async {
+    if (widget.video.id == 'bee_fallback') return;
+    final sound = await SoundService.byVideo(widget.video.id);
+    if (!mounted) return;
+    if (sound == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Son indisponible pour cette vidéo')));
+      return;
+    }
+    SoundPageScreen.open(context, sound.id);
+  }
+
   void _share() {
     // ⚠️ Règle stricte : les vidéos de la Zone Dark ne sont JAMAIS partageables.
     if (widget.video.isDark) {
@@ -875,6 +885,32 @@ class _VideoPageState extends State<_VideoPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
+            // Duo / Stitch (pas sur la Zone Dark).
+            if (!widget.video.isDark) ...[
+              ListTile(
+                leading: const Icon(Icons.dynamic_feed, color: AppColors.primary),
+                title: const Text('Duo (côte à côte)',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Filme-toi à côté de cette vidéo',
+                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  QuickPublish.record(context, duetSourceId: widget.video.id, label: 'Duo');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.content_cut, color: AppColors.accent),
+                title: const Text('Stitch (à la suite)',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Enchaîne ta vidéo après celle-ci',
+                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  QuickPublish.record(context, stitchSourceId: widget.video.id, label: 'Stitch');
+                },
+              ),
+              const Divider(color: Colors.white12, height: 8),
+            ],
             ListTile(
               leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
               title: const Text('Signaler cette vidéo',
@@ -1254,6 +1290,10 @@ class _VideoPageState extends State<_VideoPage> {
                       ),
                     ),
                   ),
+                  if (widget.video.creatorVerified) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.verified, color: AppColors.primary, size: 15),
+                  ],
                   const SizedBox(width: 8),
                   GestureDetector(
                     onTap: _toggleFollow,
@@ -1326,18 +1366,23 @@ class _VideoPageState extends State<_VideoPage> {
               ],
 
               const SizedBox(height: 6),
-              const Row(
-                children: [
-                  Icon(Icons.music_note, color: Colors.white, size: 13),
-                  SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      'Musique béninoise originale',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white, fontSize: 11),
+              GestureDetector(
+                onTap: _openSound,
+                child: const Row(
+                  children: [
+                    Icon(Icons.music_note, color: Colors.white, size: 13),
+                    SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'Son original — appuie pour voir',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
                     ),
-                  ),
-                ],
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: Colors.white54, size: 13),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1579,7 +1624,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               itemCount: _comments.length,
               itemBuilder: (_, i) {
                 final c = _comments[i];
-                final author = (c['author_name'] ?? c['user_name'] ?? c['phone'] ?? 'Anonyme').toString();
+                // Le nom peut arriver aplati (author_name) ou imbriqué
+                // (user: {username}) selon la version de l'API.
+                final nested = (c['user'] is Map) ? (c['user']['username'] ?? '').toString() : '';
+                final author = (c['author_name'] ??
+                        (nested.isNotEmpty ? nested : null) ??
+                        c['user_name'] ??
+                        'Utilisateur')
+                    .toString();
                 final content = (c['content'] ?? '').toString();
                 return _CommentTile(
                   author: author,
