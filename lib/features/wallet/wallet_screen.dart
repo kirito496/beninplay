@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../core/api_service.dart';
+import '../../core/biometric.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/algorithms/revenue_algorithm.dart';
+import '../kyc/kyc_verification_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -65,26 +67,66 @@ class _WalletScreenState extends State<WalletScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
+                    // Carte solde façon "carte bancaire premium"
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF00C853), Color(0xFF009624)],
+                          colors: [Color(0xFF00E676), Color(0xFF00C853), Color(0xFF00695C)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.35),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Solde disponible', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                          const SizedBox(height: 8),
-                          Text(
-                            _balanceVisible ? '${_balance.toStringAsFixed(0)} FCFA' : '••••••',
-                            style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                          Row(
+                            children: [
+                              const Icon(Icons.account_balance_wallet_rounded,
+                                  color: Colors.white70, size: 18),
+                              const SizedBox(width: 6),
+                              const Text('Solde disponible',
+                                  style: TextStyle(color: Colors.white70, fontSize: 14)),
+                              const Spacer(),
+                              // Mini drapeau Bénin (identité)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.22),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text('🇧🇯 BeninPlay',
+                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 14),
+                          Text(
+                            _balanceVisible ? _balance.toStringAsFixed(0) : '••••••',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text('FCFA',
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2)),
                         ],
                       ),
                     ),
@@ -166,6 +208,79 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
+  void _showBlockedDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Row(children: [
+          Icon(Icons.block, color: AppColors.error),
+          SizedBox(width: 8),
+          Text('Monétisation bloquée', style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: Text(
+          '$message\n\nRappel : un seul compte par personne peut générer de l\'argent. '
+          'Si tu penses qu\'il s\'agit d\'une erreur, demande une réexamination.',
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final r = await ApiService.requestMonetizationReview();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(r['message']?.toString() ?? 'Demande envoyée'),
+                backgroundColor: r['success'] == true ? AppColors.primary : AppColors.error,
+                duration: const Duration(seconds: 4),
+              ));
+            },
+            child: const Text('Demander une réexamination'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showKycRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Row(children: [
+          Icon(Icons.badge_outlined, color: AppColors.primary),
+          SizedBox(width: 8),
+          Text('Vérification requise', style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: const Text(
+          'Pour retirer tes gains, tu dois vérifier ton identité (pièce CIP). '
+          'Cela garantit qu\'un seul compte par personne peut gagner de l\'argent.',
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Plus tard', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const KycVerificationScreen()),
+              );
+            },
+            child: const Text('Vérifier mon identité'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showWithdrawSheet(BuildContext context) {
     final amountCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -238,13 +353,24 @@ class _WalletScreenState extends State<WalletScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Entrez votre numéro Mobile Money'), backgroundColor: AppColors.error));
                     return;
                   }
+                  // Verrou biométrique (empreinte) avant de retirer
+                  final biometricOk = await Biometric.confirm('Confirme ton retrait par empreinte');
+                  if (!biometricOk) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Retrait annulé (empreinte non validée)'), backgroundColor: AppColors.error));
+                    return;
+                  }
                   Navigator.pop(context);
                   final result = await ApiService.withdraw(amount: amount, phone: phone, operator: selectedMomo);
+                  if (!mounted) return;
                   if (result['success'] == true) {
                     await _loadWallet();
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Retrait en cours...'), backgroundColor: AppColors.primary, duration: const Duration(seconds: 4)));
+                  } else if (result['code'] == 'monetization_blocked') {
+                    _showBlockedDialog(result['message']?.toString() ?? 'Monétisation bloquée.');
+                  } else if (result['code'] == 'kyc_required') {
+                    _showKycRequiredDialog();
                   } else {
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Erreur lors du retrait'), backgroundColor: AppColors.error));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Erreur lors du retrait'), backgroundColor: AppColors.error));
                   }
                 },
                 style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),

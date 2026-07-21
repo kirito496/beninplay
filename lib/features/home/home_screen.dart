@@ -12,6 +12,8 @@ import '../profile/profile_screen.dart';
 import '../discover/discover_screen.dart' show DiscoverScreen;
 import '../messages/messages_screen.dart';
 import '../live/live_screen.dart';
+import '../upload/video_editor_screen.dart';
+import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,14 +25,26 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   int _feedRefreshKey = 0;
+  int _unreadMsgs = 0; // badge sur l'onglet Messages
 
   List<Widget> get _screens => [
-    VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenMessages: _openMessages),
-    const DiscoverScreen(),
+    VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenDiscover: _openDiscover),
+    const MessagesScreen(),
     const SizedBox(),
     const WalletScreen(),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    final n = await ApiService.getUnreadMessages();
+    if (mounted && n != _unreadMsgs) setState(() => _unreadMsgs = n);
+  }
 
   void _onNavTap(int index) {
     if (index == 2) {
@@ -38,6 +52,12 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() => _currentIndex = index);
+    // En ouvrant Messages, les non-lus seront lus → on efface le badge après coup
+    if (index == 1) Future.delayed(const Duration(seconds: 2), _loadUnread);
+  }
+
+  void _openDiscover() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoverScreen()));
   }
 
   Future<void> _pickVideo(ImageSource source) async {
@@ -49,8 +69,17 @@ class _HomeScreenState extends State<HomeScreen> {
         maxDuration: const Duration(minutes: 3),
       );
       if (video == null) { return; }
+      if (!mounted) return;
+      // Étape d'édition "façon Snapchat" (filtres, texte, emojis) avant publication.
+      final edit = await Navigator.push<EditResult>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VideoEditorScreen(videoFile: File(video.path)),
+        ),
+      );
+      if (edit == null) return; // l'utilisateur a annulé l'édition
       if (mounted) {
-        _showPublishForm(File(video.path));
+        _showPublishForm(File(video.path), edit);
       }
     } catch (e) {
       if (mounted) {
@@ -59,10 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
-  }
-
-  void _openMessages() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const MessagesScreen()));
   }
 
   void _openLives() {
@@ -76,9 +101,10 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -140,14 +166,16 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
           ],
+          ),
         ),
       ),
     );
   }
 
-  void _showPublishForm(File videoFile) {
+  void _showPublishForm(File videoFile, EditResult edit) {
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
     String selectedZone = 'normal';
     final tags = <String>[];
     final tagCtrl = TextEditingController();
@@ -310,6 +338,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // Prix de vente à l'unité (0 = gratuit)
+                TextField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Prix (FCFA) — laisse vide pour gratuit',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    helperText: 'Si tu mets un prix, la vidéo est verrouillée jusqu\'au paiement',
+                    helperStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                    prefixIcon: Icon(Icons.sell_outlined, color: Colors.white38, size: 20),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 if (tags.isNotEmpty)
                   Wrap(
                     spacing: 6,
@@ -381,7 +429,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: titleCtrl.text.trim(),
                       description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
                       zone: selectedZone,
+                      price: int.tryParse(priceCtrl.text.trim()) ?? 0,
                       tags: tags,
+                      filter: edit.filter,
+                      overlays: edit.overlays.isEmpty
+                          ? null
+                          : jsonEncode(edit.overlays.map((o) => o.toJson()).toList()),
                     ).then((res) {
                       if (!mounted) return null;
                       if (res['success'] == true) {
@@ -396,8 +449,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(res['error']?.toString() ?? 'Erreur lors de la publication'),
+                            content: Text(res['message']?.toString() ?? 'Erreur lors de la publication'),
                             backgroundColor: AppColors.error,
+                            duration: const Duration(seconds: 6),
                           ),
                         );
                       }
@@ -455,23 +509,15 @@ class _HomeScreenState extends State<HomeScreen> {
               activeIcon: Icon(Icons.home),
               label: AppStrings.navHome,
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.explore_outlined),
-              activeIcon: Icon(Icons.explore),
-              label: AppStrings.navDiscover,
-            ),
             BottomNavigationBarItem(
-              icon: Container(
-                width: 44,
-                height: 30,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, Color(0xFF00897B)],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add, color: Colors.white, size: 22),
-              ),
+              icon: _TabBadge(icon: Icons.forum_outlined, count: _unreadMsgs),
+              activeIcon: _TabBadge(icon: Icons.forum, count: _unreadMsgs),
+              label: 'Messages',
+            ),
+            const BottomNavigationBarItem(
+              // Bouton Publier bien visible (façon TikTok) : pastille en
+              // dégradé vert avec halo lumineux qui "respire".
+              icon: _PulsingPublishButton(),
               label: AppStrings.navUpload,
             ),
             const BottomNavigationBarItem(
@@ -555,3 +601,96 @@ class _UploadOption extends StatelessWidget {
   }
 }
 
+
+// ── Bouton Publier avec halo qui "respire" (attire l'œil vers la création) ──
+
+class _PulsingPublishButton extends StatefulWidget {
+  const _PulsingPublishButton();
+
+  @override
+  State<_PulsingPublishButton> createState() => _PulsingPublishButtonState();
+}
+
+class _PulsingPublishButtonState extends State<_PulsingPublishButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Container(
+          width: 52,
+          height: 34,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF00E676), AppColors.primary],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35 + t * 0.35),
+                blurRadius: 10 + t * 10,
+                spreadRadius: t * 2,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Transform.scale(
+            scale: 1.0 + t * 0.08,
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Icône d'onglet avec pastille de non-lus (Messages) ──────────────────────
+
+class _TabBadge extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  const _TabBadge({required this.icon, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (count > 0)
+          Positioned(
+            top: -5,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.error,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: const Color(0xFF0A0A0A), width: 1.5),
+              ),
+              constraints: const BoxConstraints(minWidth: 16),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}

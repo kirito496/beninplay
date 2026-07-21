@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,13 +6,20 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_service.dart';
+import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/benin_regions.dart';
 import '../../shared/models/video_model.dart';
 import 'boost_screen.dart';
 import 'boosts_dashboard.dart';
 import '../dark_zone/dark_gate_screen.dart' as dark_gate;
+import '../discover/leaderboard_screen.dart';
+import '../notifications/notifications_screen.dart';
+import '../saved/saved_videos_screen.dart';
+import '../ai/ai_chat_screen.dart';
+import 'creator_stats_screen.dart';
 import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -30,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String statsFollowing = '0';
   String statsLikes = '0';
   bool _isCreator = false;
+  String _creatorStatus = 'none'; // none | pending | approved | rejected
   String? _myRegion;
   String? _myGender;
   int? _myBirthYear;
@@ -38,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<VideoModel> _myVideos = [];
   List<VideoModel> _likedVideos = [];
   bool _loadingVideos = false;
+  int _unread = 0;
 
   final List<Map<String, dynamic>> _savedVideos = [];
 
@@ -47,6 +57,112 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadProfile();
     _loadMyVideos();
     _loadLikedVideos();
+    _loadCreatorStatus();
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    final n = await ApiService.getUnreadCount();
+    if (mounted) setState(() => _unread = n);
+  }
+
+  Future<void> _loadCreatorStatus() async {
+    try {
+      final data = await ApiService.getCreatorStatus();
+      if (!mounted) return;
+      setState(() {
+        _isCreator = data['is_creator'] == true;
+        _creatorStatus = data['status']?.toString() ?? 'none';
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _applyCreator() async {
+    final res = await ApiService.applyToBeCreator();
+    if (!mounted) return;
+    final ok = res['success'] == true;
+    if (ok) setState(() => _creatorStatus = 'pending');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (ok ? 'Demande envoyée' : 'Erreur')),
+        backgroundColor: ok ? AppColors.primary : AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Widget _buildCreatorCard() {
+    // Déjà créateur → badge doré
+    if (_isCreator) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [
+            const Color(0xFFF5A623).withValues(alpha: 0.25),
+            const Color(0xFFF5A623).withValues(alpha: 0.05),
+          ]),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFF5A623).withValues(alpha: 0.6)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.verified, color: Color(0xFFF5A623)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Créateur vérifié',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                  Text('Tu peux monétiser tes vidéos (gains, retraits)',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final pending = _creatorStatus == 'pending';
+    return GestureDetector(
+      onTap: pending ? null : _applyCreator,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: pending ? Colors.white10 : AppColors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: pending ? Colors.white24 : AppColors.primary.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(pending ? Icons.hourglass_top : Icons.workspace_premium,
+                color: pending ? Colors.white54 : AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pending ? 'Demande en cours d\'examen' : 'Devenir créateur de contenu',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  Text(
+                    pending
+                        ? 'Nous examinons ta demande (24-48 h)'
+                        : 'Débloque la monétisation : gains, retraits, tableau de bord',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (!pending)
+              const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadLikedVideos() async {
@@ -795,6 +911,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Pages légales publiques (hébergées sur l'API)
+  void _openLegal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.gavel, color: Colors.white70),
+              title: const Text("Conditions générales d'utilisation",
+                  style: TextStyle(color: Colors.white)),
+              onTap: () => launchUrl(Uri.parse('${AppConfig.api}/cgu'),
+                  mode: LaunchMode.externalApplication),
+            ),
+            ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined, color: Colors.white70),
+              title: const Text('Politique de confidentialité',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () => launchUrl(Uri.parse('${AppConfig.api}/confidentialite'),
+                  mode: LaunchMode.externalApplication),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Suppression DÉFINITIVE du compte (exigence Google Play) : double confirmation.
+  void _confirmDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Text('Supprimer ton compte ?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Cette action est DÉFINITIVE :\n\n'
+          '• toutes tes vidéos seront supprimées\n'
+          '• ton solde et tes gains restants seront perdus\n'
+          '• ton profil sera effacé\n\n'
+          'Pense à retirer ton argent avant.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _reallyDeleteAccount();
+            },
+            child: const Text('Continuer', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _reallyDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Text('Dernière confirmation',
+            style: TextStyle(color: AppColors.error)),
+        content: const Text(
+          'Confirme la suppression définitive de ton compte BeninPlay.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final res = await ApiService.deleteAccount();
+              if (!mounted) return;
+              if (res['success'] == true) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(res['message']?.toString() ?? 'Suppression impossible'),
+                  backgroundColor: AppColors.error,
+                ));
+              }
+            },
+            child: const Text('Supprimer définitivement'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -813,11 +1037,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
+                // Bannière créateur : profondeur verte + lueur (fini le plat)
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF1A1A2E), AppColors.normalBg],
+                  gradient: RadialGradient(
+                    center: Alignment(0, -1.2),
+                    radius: 1.6,
+                    colors: [Color(0xFF11522B), Color(0xFF07200F), AppColors.normalBg],
                   ),
                 ),
                 child: Column(
@@ -828,7 +1053,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: _editProfile,
                       child: Stack(
                         children: [
-                          CircleAvatar(
+                          // Anneau dégradé autour de l'avatar (façon story)
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF00E676), AppColors.accent],
+                              ),
+                            ),
+                            child: CircleAvatar(
                             radius: 44,
                             backgroundColor: AppColors.primary,
                             child: Text(
@@ -839,6 +1075,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          ),
                           ),
                           Positioned(
                             bottom: 0,
@@ -876,14 +1113,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _StatItem(value: statsVideos, label: 'Vidéos'),
-                      _StatItem(value: statsFollowers, label: 'Abonnés'),
-                      _StatItem(value: statsFollowing, label: 'Abonnements'),
-                      _StatItem(value: statsLikes, label: 'Likes'),
-                    ],
+                  // Stats en carte "vitrée" — vitrine du créateur
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _StatItem(value: statsVideos, label: 'Vidéos'),
+                        _StatItem(value: statsFollowers, label: 'Abonnés'),
+                        _StatItem(value: statsFollowing, label: 'Abonnements'),
+                        _StatItem(value: statsLikes, label: 'Likes'),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 16),
@@ -923,6 +1169,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ],
                   ),
+
+                  const SizedBox(height: 20),
+
+                  _buildCreatorCard(),
 
                   const SizedBox(height: 20),
 
@@ -989,15 +1239,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => _showVideos('Mes vidéos', _myVideos.cast<dynamic>(), boostable: true),
                   ),
                   _MenuItem(
+                    icon: Icons.notifications_none,
+                    label: 'Notifications',
+                    badge: _unread > 0 ? '$_unread' : null,
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+                      _loadUnread();
+                    },
+                  ),
+                  _MenuItem(
                     icon: Icons.rocket_launch_outlined,
                     label: 'Mes boosts',
                     onTap: () => BoostsDashboard.show(context),
+                  ),
+                  _MenuItem(
+                    icon: Icons.insights_outlined,
+                    label: 'Mes statistiques',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CreatorStatsScreen())),
+                  ),
+                  _MenuItem(
+                    icon: Icons.leaderboard_outlined,
+                    label: 'Classement des créateurs',
+                    onTap: () => CreatorLeaderboard.show(context),
                   ),
                   _MenuItem(
                     icon: Icons.favorite_outline,
                     label: 'Vidéos aimées',
                     badge: '${_likedVideos.length}',
                     onTap: () => _showVideos('Vidéos aimées', _likedVideos.cast<dynamic>()),
+                  ),
+                  _MenuItem(
+                    icon: Icons.bookmark_border,
+                    label: 'Mes favoris',
+                    onTap: () => SavedVideosScreen.open(context),
+                  ),
+                  _MenuItem(
+                    icon: Icons.smart_toy_outlined,
+                    label: 'Assistant IA 🤖',
+                    onTap: () => AiChatScreen.open(context),
                   ),
                   _MenuItem(
                     icon: Icons.bookmark_outline,
@@ -1010,10 +1291,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: _showHelp,
                   ),
                   _MenuItem(
+                    icon: Icons.description_outlined,
+                    label: 'CGU & Confidentialité',
+                    onTap: _openLegal,
+                  ),
+                  _MenuItem(
                     icon: Icons.logout,
                     label: 'Déconnexion',
                     color: AppColors.error,
                     onTap: _confirmLogout,
+                  ),
+                  _MenuItem(
+                    icon: Icons.delete_forever_outlined,
+                    label: 'Supprimer mon compte',
+                    color: AppColors.error,
+                    onTap: _confirmDeleteAccount,
                   ),
                 ],
               ),
@@ -1031,6 +1323,33 @@ class _VideoThumb extends StatefulWidget {
   const _VideoThumb({this.videoUrl});
 
   static final Map<String, String> _cache = {};
+
+  // ── Limiteur de concurrence ────────────────────────────────────────────
+  // Générer une miniature = TÉLÉCHARGER + DÉCODER la vidéo distante. Dans une
+  // grille (« Mes vidéos »), en lancer 10+ à la fois SATURE le fil principal
+  // et gèle l'appli (l'écran ouvert par-dessus, ex. Boost, reste vide). On en
+  // autorise donc 2 à la fois ; les autres attendent leur tour.
+  static const _maxConcurrent = 2;
+  static int _inFlight = 0;
+  static final List<Completer<void>> _waiters = [];
+
+  static Future<void> _acquire() async {
+    if (_inFlight < _maxConcurrent) {
+      _inFlight++;
+      return;
+    }
+    final c = Completer<void>();
+    _waiters.add(c);
+    await c.future; // le créneau nous est transmis à la libération
+  }
+
+  static void _release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete(); // passe le créneau au suivant
+    } else {
+      _inFlight--;
+    }
+  }
 
   @override
   State<_VideoThumb> createState() => _VideoThumbState();
@@ -1053,6 +1372,7 @@ class _VideoThumbState extends State<_VideoThumb> {
       setState(() => _path = _VideoThumb._cache[url]);
       return;
     }
+    await _VideoThumb._acquire(); // au plus 2 générations simultanées
     try {
       final dir = await getTemporaryDirectory();
       final thumb = await VideoThumbnail.thumbnailFile(
@@ -1062,11 +1382,14 @@ class _VideoThumbState extends State<_VideoThumb> {
         maxWidth: 200,
         quality: 50,
       );
-      if (thumb != null && mounted) {
+      if (thumb != null) {
         _VideoThumb._cache[url] = thumb;
-        setState(() => _path = thumb);
+        if (mounted) setState(() => _path = thumb);
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _VideoThumb._release();
+    }
   }
 
   @override

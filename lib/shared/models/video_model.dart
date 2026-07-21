@@ -1,3 +1,7 @@
+import 'dart:convert';
+import '../../core/app_config.dart';
+import '../../features/upload/video_effects.dart';
+
 enum VideoZone { normal, dark }
 
 class VideoModel {
@@ -8,6 +12,7 @@ class VideoModel {
   final String title;
   final String? description;
   final String videoUrl;
+  final String? hlsUrl; // version multi-qualités (adaptative à la connexion)
   final String? thumbnailUrl;
   final VideoZone zone;
   final int likes;
@@ -16,6 +21,9 @@ class VideoModel {
   final bool isLiked;
   final bool isBoosted;
   final double price; // 0 = gratuit
+  final bool isLocked; // vidéo payante non encore achetée par le spectateur
+  final String? filter; // filtre couleur "façon Snapchat" (nom), null = aucun
+  final List<VideoOverlayItem> overlays; // textes/emojis posés sur la vidéo
   final DateTime createdAt;
 
   const VideoModel({
@@ -26,6 +34,7 @@ class VideoModel {
     required this.title,
     this.description,
     required this.videoUrl,
+    this.hlsUrl,
     this.thumbnailUrl,
     this.zone = VideoZone.normal,
     this.likes = 0,
@@ -34,11 +43,38 @@ class VideoModel {
     this.isLiked = false,
     this.isBoosted = false,
     this.price = 0,
+    this.isLocked = false,
+    this.filter,
+    this.overlays = const [],
     required this.createdAt,
   });
 
   bool get isFree => price == 0;
   bool get isDark => zone == VideoZone.dark;
+
+  /// URL de lecture : la version adaptative (HLS, s'ajuste à la connexion)
+  /// quand elle existe, sinon le MP4 d'origine — servie via le CDN (Lagos)
+  /// si configuré, pour un chargement rapide au Bénin.
+  String get playbackUrl {
+    final u = (hlsUrl != null && hlsUrl!.isNotEmpty) ? hlsUrl! : videoUrl;
+    return AppConfig.cdn(u);
+  }
+
+  /// MP4 HD (qualité d'origine) — utilisé quand la connexion est bonne.
+  String get hdUrl => AppConfig.cdn(videoUrl);
+
+  /// MP4 480p léger (généré par le serveur, stocké dans hls_url) — utilisé
+  /// quand la connexion est lente. Null tant que la version légère n'existe pas.
+  String? get lightUrl =>
+      (hlsUrl != null && hlsUrl!.isNotEmpty) ? AppConfig.cdn(hlsUrl!) : null;
+
+  /// URL à mettre en cache disque selon la connexion :
+  ///  • connexion rapide → HD
+  ///  • connexion lente → 480p léger (repli sur HD si la version légère
+  ///    n'est pas encore prête).
+  /// Chaque version est un MP4 unique, donc entièrement cachable sur le disque.
+  String cacheUrlFor({required bool fast}) =>
+      fast ? hdUrl : (lightUrl ?? hdUrl);
 
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',
@@ -48,6 +84,7 @@ class VideoModel {
     title: json['title'] ?? '',
     description: json['description'],
     videoUrl: json['video_url'] ?? '',
+    hlsUrl: json['hls_url'],
     thumbnailUrl: json['thumbnail_url'],
     zone: VideoZone.values.where((z) => z.name == (json['zone'] ?? 'normal')).firstOrNull ?? VideoZone.normal,
     likes: json['likes_count'] ?? json['likes'] ?? 0,
@@ -56,8 +93,26 @@ class VideoModel {
     isLiked: json['is_liked'] ?? false,
     isBoosted: json['is_boosted'] ?? false,
     price: (json['price'] ?? 0).toDouble(),
+    isLocked: json['is_locked'] == true,
+    filter: json['filter'],
+    overlays: _parseOverlays(json['overlays']),
     createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
   );
+
+  /// `overlays` peut arriver en JSON (String) ou déjà décodé (List).
+  static List<VideoOverlayItem> _parseOverlays(dynamic raw) {
+    if (raw == null) return const [];
+    try {
+      final list = raw is String ? jsonDecode(raw) : raw;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => VideoOverlayItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
 
   // Données fictives pour les tests
   static List<VideoModel> get mockNormal => List.generate(

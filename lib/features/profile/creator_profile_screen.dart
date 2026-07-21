@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
+import '../messages/messages_screen.dart';
 
 /// Profil public d'un créateur : infos + bouton Suivre + grille de ses vidéos.
 class CreatorProfileScreen extends StatefulWidget {
@@ -126,23 +127,35 @@ class _CreatorProfileScreenState extends State<CreatorProfileScreen> {
                 if (!_isMe)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _toggleFollow,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _following ? Colors.white12 : AppColors.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          _following ? 'Abonné ✓' : 'Suivre',
-                          style: TextStyle(
-                            color: _following ? Colors.white : Colors.black,
-                            fontWeight: FontWeight.bold,
+                    child: Row(children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _toggleFollow,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _following ? Colors.white12 : AppColors.primary,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            _following ? 'Abonné ✓' : 'Suivre',
+                            style: TextStyle(
+                              color: _following ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => ChatScreen.openWith(context, widget.creatorId,
+                            name: _profile['username']?.toString() ?? widget.creatorName),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        ),
+                        icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary, size: 18),
+                        label: const Text('Message', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                      ),
+                    ]),
                   ),
                 const SizedBox(height: 16),
                 const Divider(color: Colors.white12, height: 1),

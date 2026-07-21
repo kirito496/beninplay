@@ -96,6 +96,8 @@ class _BoostCard extends StatelessWidget {
     final gained = (boost['views_gained'] as num?)?.toInt() ?? 0;
     final total = (boost['views_total'] as num?)?.toInt() ?? 0;
     final amount = (boost['amount'] as num?)?.toInt() ?? 0;
+    final reach = (boost['reach'] as num?)?.toInt();
+    final costPerView = (boost['cost_per_view'] as num?)?.toInt();
     final daysLeft = (boost['days_left'] as num?)?.toInt() ?? 0;
     final hoursLeft = (boost['hours_left'] as num?)?.toInt() ?? 0;
     final regions = (boost['regions'] as List?)?.cast<dynamic>().map((e) => e.toString()).toList() ?? ['all'];
@@ -138,9 +140,18 @@ class _BoostCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(children: [
             _stat('👁 Vues gagnées', '+$gained'),
-            _stat('Vues totales', '$total'),
+            _stat('Portée unique', reach != null ? '$reach' : '—'),
             _stat('Payé', '$amount F'),
           ]),
+          if (costPerView != null) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              const Icon(Icons.trending_down, color: Colors.white38, size: 14),
+              const SizedBox(width: 4),
+              Text('Coût par vue : $costPerView F',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ]),
+          ],
           const SizedBox(height: 10),
           Row(children: [
             const Icon(Icons.location_on_outlined, color: Colors.white38, size: 14),

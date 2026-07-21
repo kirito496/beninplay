@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace "com.example.beninplay"
+    namespace "bj.beninplay.app"
     compileSdk flutter.compileSdkVersion
     ndkVersion "27.0.12077973"
 
@@ -19,8 +19,9 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.beninplay"
-        minSdkVersion 23
+        // Identifiant définitif Play Store (com.example.* est refusé par Google)
+        applicationId "bj.beninplay.app"
+        minSdkVersion 24
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutter.versionCode
         versionName flutter.versionName

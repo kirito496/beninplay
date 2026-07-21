@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../shared/widgets/momo_pay_sheet.dart';
 import '../feed/video_feed_screen.dart';
 
 class DarkGateScreen extends StatefulWidget {
@@ -19,7 +21,17 @@ class _DarkGateScreenState extends State<DarkGateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.darkBg,
-      body: SafeArea(
+      body: Container(
+        // Ambiance Zone Dark : lueur violette/rose — rupture nette avec la
+        // zone normale (verte), l'utilisateur SENT qu'il change d'univers.
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.6, -0.6),
+            radius: 1.4,
+            colors: [Color(0xFF3A0D4F), Color(0xFF16041F), Color(0xFF0D0010)],
+          ),
+        ),
+        child: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           child: switch (_step) {
@@ -35,6 +47,7 @@ class _DarkGateScreenState extends State<DarkGateScreen> {
               ),
             ),
           },
+        ),
         ),
       ),
     );
@@ -179,10 +192,21 @@ class _KycStepState extends State<_KycStep> {
     }
 
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 2));
+    final res = await ApiService.submitKyc(
+      frontPath: _frontImage!.path,
+      backPath: _backImage!.path,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
-    widget.onComplete();
+    final ok = res['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (ok ? 'Vérification envoyée' : 'Erreur')),
+        backgroundColor: ok ? AppColors.darkPrimary : AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+    if (ok) widget.onComplete();
   }
 
   @override
@@ -346,10 +370,10 @@ class _PaymentStepState extends State<_PaymentStep> {
   int _selectedPayment = 0;
   bool _isLoading = false;
 
-  final List<Map<String, String>> plans = const [
-    {'label': 'Mensuel', 'price': '2 000 FCFA', 'period': '/mois'},
-    {'label': 'Trimestriel', 'price': '5 000 FCFA', 'period': '/3 mois', 'save': '-17%'},
-    {'label': 'Annuel', 'price': '18 000 FCFA', 'period': '/an', 'save': '-25%'},
+  final List<Map<String, dynamic>> plans = const [
+    {'label': 'Mensuel', 'price': '2 000 FCFA', 'period': '/mois', 'amount': 2000, 'days': 30},
+    {'label': 'Trimestriel', 'price': '5 000 FCFA', 'period': '/3 mois', 'save': '-17%', 'amount': 5000, 'days': 90},
+    {'label': 'Annuel', 'price': '18 000 FCFA', 'period': '/an', 'save': '-25%', 'amount': 18000, 'days': 365},
   ];
 
   final List<Map<String, String>> payments = const [
@@ -362,11 +386,15 @@ class _PaymentStepState extends State<_PaymentStep> {
   }
 
   void _subscribe() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    widget.onComplete();
+    final plan = plans[_selectedPlan];
+    final paid = await MomoPaySheet.show(
+      context,
+      amount: plan['amount'] as int,
+      type: 'dark_sub',
+      description: 'Abonnement Zone Dark — ${plan['label']}',
+      boostDays: plan['days'] as int,
+    );
+    if (paid == true && mounted) widget.onComplete();
   }
 
   @override

@@ -1,11 +1,22 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
+import '../../core/app_config.dart';
+import '../../core/screen_security.dart';
 import '../../core/constants/app_colors.dart';
 import '../../shared/models/video_model.dart';
+import '../../shared/widgets/momo_pay_sheet.dart';
+import '../../shared/widgets/tip_sheet.dart';
 import '../profile/creator_profile_screen.dart';
+import '../upload/video_effects.dart';
+import '../../shared/widgets/bp_logo.dart';
+import '../../services/video_cache.dart';
+import '../../services/saved_videos.dart';
+import '../../services/seen_videos.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -13,7 +24,7 @@ class VideoFeedScreen extends StatefulWidget {
   final bool isTabActive;
   final int refreshKey;
   final VoidCallback? onOpenLive;
-  final VoidCallback? onOpenMessages;
+  final VoidCallback? onOpenDiscover;
 
   const VideoFeedScreen({
     super.key,
@@ -22,7 +33,7 @@ class VideoFeedScreen extends StatefulWidget {
     this.isTabActive = true,
     this.refreshKey = 0,
     this.onOpenLive,
-    this.onOpenMessages,
+    this.onOpenDiscover,
   });
 
   @override
@@ -63,6 +74,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     super.initState();
     _lastRefreshKey = widget.refreshKey;
     _pageController = PageController();
+    // Zone Dark : bloque captures d'écran + enregistrement d'écran
+    if (widget.isDark) ScreenSecurity.enable();
     _loadVideos();
   }
 
@@ -96,48 +109,139 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _controllers.clear();
   }
 
-  // Initialise le contrôleur pour un index donné (avec cache disque)
-  Future<void> _initController(int index) async {
-    if (_controllers.containsKey(index)) return;
+  // ── Stratégie « toute la connexion pour LA vidéo affichée » ────────────────
+  // À chaque défilement, _pageGen change : tout chargement lancé pour une
+  // ancienne page devient périmé et est ABANDONNÉ immédiatement (le dispose
+  // coupe les téléchargements en cours). Défiler vite = zéro data gaspillée.
+  int _pageGen = 0;
+
+  bool _stale(int gen, int index) =>
+      !mounted || (gen != _pageGen && index != _currentIndex);
+
+  // Indices dont la vidéo est en cours de téléchargement (évite de lancer
+  // deux fois le même téléchargement pendant qu'il est en cours).
+  final Set<int> _loading = {};
+
+  // Initialise le contrôleur pour un index donné.
+  //
+  // CACHE DISQUE : la vidéo est d'abord TÉLÉCHARGÉE EN ENTIER sur le téléphone
+  // (VideoCache), puis lue depuis ce fichier local. Donc :
+  //  • la lecture en boucle ne reconsomme aucune data
+  //  • re-scroller vers une vidéo déjà vue est instantané et hors-ligne
+  //
+  // [allowPreload] : la SUIVANTE n'est mise en cache qu'UNE FOIS la vidéo
+  // affichée entièrement téléchargée — la connexion sert d'abord à finir la
+  // vidéo en cours, jamais aux deux en même temps.
+  Future<void> _initController(int index, {int? gen, bool allowPreload = true}) async {
+    final g = gen ?? _pageGen;
+    if (_controllers.containsKey(index) || _loading.contains(index)) return;
     if (index < 0 || index >= _videos.length) return;
     final video = _videos[index];
+    if (_stale(g, index)) return;
 
-    VideoPlayerController ctrl;
+    _loading.add(index);
+    VideoPlayerController? ctrl;
     try {
-      // Récupère depuis le cache disque (télécharge 1 seule fois, puis 0 data)
-      final fileInfo = await DefaultCacheManager().getSingleFile(video.videoUrl);
-      if (!mounted) return;
+      // 1) Télécharge la vidéo EN ENTIER vers le disque (ou récupère le cache).
+      //    La vidéo REGARDÉE (index courant) = priorité HAUTE : elle passe
+      //    devant tous les préchargements et reçoit toute la bande passante.
+      final isCurrent = index == _currentIndex;
+      // Choix HD / 480p selon la vitesse de connexion mesurée.
+      final url = video.cacheUrlFor(fast: VideoCache.fastConnection);
+      final file = isCurrent
+          ? await VideoCache.getForPlayback(url)
+          : await VideoCache.prefetch(url);
+
+      // Zappée pendant le téléchargement (et trop loin) → on abandonne.
+      // Le fichier reste en cache pour un futur affichage (rien de perdu).
+      if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
+
+      // 2) Lecture depuis le FICHIER LOCAL (aucun réseau ensuite).
       ctrl = VideoPlayerController.file(
-        File(fileInfo.path),
+        file,
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
     } catch (_) {
-      // Si le cache échoue, lecture réseau directe
-      if (!mounted) return;
+      // Échec du cache (hors-ligne, disque plein…) → repli : lecture réseau
+      // directe pour ne jamais bloquer la lecture.
+      if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
       ctrl = VideoPlayerController.networkUrl(
-        Uri.parse(video.videoUrl),
+        Uri.parse(video.playbackUrl),
         videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
       );
+    } finally {
+      _loading.remove(index);
     }
 
-    // Vérifie qu'on n'a pas été disposé pendant le téléchargement
-    if (!_controllers.containsKey(index) && (index - _currentIndex).abs() > 1) {
+    if (ctrl == null) return; // abandonnée pendant le téléchargement
+    _controllers[index] = ctrl;
+    await ctrl.initialize();
+
+    // Zappée pendant l'initialisation → on coupe et libère
+    if (_stale(g, index) && (index - _currentIndex).abs() > 1) {
+      _controllers.remove(index);
       ctrl.dispose();
       return;
     }
-    _controllers[index] = ctrl;
-    await ctrl.initialize();
+
     ctrl.setLooping(true);
     if (index == _currentIndex && widget.isTabActive) {
       ctrl.play();
     }
     if (mounted) setState(() {});
+
+    // La vidéo affichée est ENTIÈREMENT en cache → SEULEMENT MAINTENANT on
+    // lance la chaîne de préchargement des suivantes.
+    if (allowPreload && index == _currentIndex && g == _pageGen) {
+      _prefetchChain(index, g);
+    }
   }
 
-  // Nettoie les contrôleurs trop loin de l'index actuel (économise la RAM et le réseau)
+  // Nombre de vidéos mises en cache À L'AVANCE au-delà de la suivante.
+  // La connexion sert donc à prendre de l'avance pendant que tu regardes.
+  static const int _prefetchAhead = 3;
+
+  // Chaîne de préchargement SÉQUENTIELLE : pendant que tu regardes la vidéo
+  // courante (déjà entièrement en cache), on télécharge les suivantes UNE PAR
+  // UNE → toute la connexion va sur une seule vidéo à la fois (au plus vite),
+  // et on prend plusieurs vidéos d'avance. Interrompue dès que tu défiles
+  // (le changement de génération arrête la boucle).
+  Future<void> _prefetchChain(int currentIdx, int gen) async {
+    // 1) La SUIVANTE : contrôleur prêt (swipe instantané).
+    await _initController(currentIdx + 1, gen: gen, allowPreload: false);
+    // 2) Les vidéos d'après : juste en cache disque, une par une.
+    for (int k = 2; k <= _prefetchAhead + 1; k++) {
+      if (!mounted || gen != _pageGen) return; // tu as défilé → on arrête
+      final i = currentIdx + k;
+      if (i >= _videos.length) {
+        if (_hasMore) _loadVideos(); // recharge la liste puis la boucle reprendra
+        return;
+      }
+      try {
+        final url = _videos[i].cacheUrlFor(fast: VideoCache.fastConnection);
+        if (!await VideoCache.isCached(url)) {
+          // Priorité basse : si tu arrives entre-temps sur une vidéo non
+          // cachée, SON téléchargement (priorité haute) passera devant.
+          await VideoCache.prefetch(url); // attend la fin AVANT la suivante
+        }
+      } catch (_) { /* réseau/disque : on tente la suivante */ }
+    }
+  }
+
+  // Relance la chaîne de préchargement (quand la vidéo est déjà en cache).
+  void _preloadNext(int index, int gen) {
+    if (mounted && gen == _pageGen && _currentIndex == index) {
+      _prefetchChain(index, gen);
+    }
+  }
+
+  // Nettoie les contrôleurs : on ne garde QUE la vidéo courante et la
+  // suivante. La vidéo PRÉCÉDENTE est libérée aussitôt — son dispose() coupe
+  // tout téléchargement/bufferisation en cours → aucune data gaspillée pour
+  // une vidéo déjà regardée qu'on ne reverra pas en remontant.
   void _cleanupControllers(int currentIdx) {
     final toRemove = _controllers.keys
-        .where((i) => (i - currentIdx).abs() > 1)
+        .where((i) => i != currentIdx && i != currentIdx + 1)
         .toList();
     for (final i in toRemove) {
       _controllers[i]?.dispose();
@@ -146,25 +250,52 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   void _onPageChanged(int index) {
+    _pageGen++; // périme tous les chargements des pages précédentes
+    final g = _pageGen;
+
     // Pause ancienne vidéo
     _controllers[_currentIndex]?.pause();
 
     setState(() => _currentIndex = index);
 
-    // Joue la nouvelle
-    _controllers[index]?.play();
+    // Nettoie d'abord : coupe les téléchargements des vidéos zappées
+    _cleanupControllers(index);
+
+    if (_controllers.containsKey(index)) {
+      // Déjà prête (préchargée) → lecture immédiate, puis on prépare la suivante
+      _controllers[index]?.play();
+      _preloadNext(index, g);
+    } else {
+      // Anti-défilement-rapide : on attend 250 ms que l'utilisateur se pose
+      // sur la vidéo avant de charger quoi que ce soit. S'il continue à
+      // défiler, RIEN n'est téléchargé pour les vidéos survolées.
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (mounted && g == _pageGen && _currentIndex == index) {
+          _initController(index, gen: g);
+        }
+      });
+    }
 
     // Compte la vue
     _registerView(index);
 
-    // Précharge la suivante
-    _initController(index + 1);
-
-    // Nettoie les anciennes
-    _cleanupControllers(index);
+    // (La vidéo suivante est préchargée automatiquement une fois l'actuelle prête.)
 
     // Charge plus de vidéos si proche de la fin
     if (index >= _videos.length - 3) _loadVideos();
+  }
+
+  // Recharge tout le feed (ex: après l'achat d'une vidéo verrouillée)
+  void _hardRefresh() {
+    _disposeAllControllers();
+    setState(() {
+      _videos = [];
+      _page = 1;
+      _hasMore = true;
+      _isLoading = true;
+      _currentIndex = 0;
+    });
+    _loadVideos();
   }
 
   void _switchTab(bool following) {
@@ -191,17 +322,30 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (_viewed.contains(v.id)) return;
     _viewed.add(v.id);
     ApiService.registerView(v.id);
+    SeenVideos.add(v.id); // mémorise pour ne plus la reproposer
   }
 
   Future<void> _loadVideos() async {
     if (!_hasMore) return;
     try {
       final List<Map<String, dynamic>> raw;
-      if (_showFollowing) {
+      if (widget.isDark) {
+        // Feed Dark : source totalement séparée
+        raw = await ApiService.getDarkVideos(page: _page);
+      } else if (_showFollowing) {
         raw = await ApiService.getFollowingFeed(page: _page);
       } else {
-        final data = await ApiService.getVideos(page: _page);
-        final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+        // Fil "Pour toi" : on envoie les vidéos DÉJÀ VUES pour ne jamais
+        // retomber sur les mêmes (même en rafraîchissant).
+        final exclude = await SeenVideos.excludeParam();
+        var data = await ApiService.getVideos(page: _page, exclude: exclude);
+        List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+        // Plus rien de neuf (tout a été vu) → on repart pour un nouveau cycle.
+        if (list.isEmpty && _page == 1 && exclude.isNotEmpty) {
+          await SeenVideos.reset();
+          data = await ApiService.getVideos(page: _page);
+          list = data['videos'] ?? data['data'] ?? [];
+        }
         raw = list.whereType<Map<String, dynamic>>().toList();
       }
       if (!mounted) return;
@@ -212,8 +356,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       setState(() {
         _videos.removeWhere((v) => v.id == 'bee_fallback');
         _videos.addAll(fetched);
-        // Vidéo d'accueil seulement dans "Pour toi"
-        if (!_showFollowing) _videos.add(_fallbackVideo);
+        // Vidéo d'accueil seulement dans "Pour toi" (jamais en Zone Dark)
+        if (!_showFollowing && !widget.isDark) _videos.add(_fallbackVideo);
         if (fetched.length < 20) _hasMore = false;
         _page++;
         _isLoading = false;
@@ -221,23 +365,25 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _currentIndex = widget.startIndex.clamp(0, _videos.length - 1);
         }
       });
-      // Initialise la première vidéo + précharge la suivante
+      // Première vidéo en priorité ; la suivante se prépare une fois celle-ci prête.
       await _initController(_currentIndex);
-      await _initController(_currentIndex + 1);
       // Compte la vue de la première vidéo affichée
       _registerView(_currentIndex);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        if (_videos.isEmpty) _videos = [_fallbackVideo];
+        // Pas de vidéo d'accueil en Zone Dark
+        if (_videos.isEmpty && !widget.isDark) _videos = [_fallbackVideo];
       });
-      await _initController(0);
+      if (_videos.isNotEmpty) await _initController(0);
     }
   }
 
   @override
   void dispose() {
+    // Retire la protection d'écran en quittant la Zone Dark
+    if (widget.isDark) ScreenSecurity.disable();
     _disposeAllControllers();
     _pageController.dispose();
     super.dispose();
@@ -251,23 +397,74 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
-            const SizedBox(width: 20),
-            _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.white, size: 26),
-            onPressed: () => _showSearch(context),
-          ),
-        ],
+        leading: widget.isDark
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        title: widget.isDark
+            ? const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Zone Dark ',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text('🔞', style: TextStyle(fontSize: 18)),
+                ],
+              )
+            // FittedBox : si jamais le titre est trop large, il rétrécit au
+            // lieu de déborder → plus jamais d'« OVERFLOWED ».
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TabButton(label: 'Pour toi', isSelected: !_showFollowing, onTap: () => _switchTab(false)),
+                    const SizedBox(width: 18),
+                    _TabButton(label: 'Abonnements', isSelected: _showFollowing, onTap: () => _switchTab(true)),
+                  ],
+                ),
+              ),
+        titleSpacing: 12,
+        actions: widget.isDark
+            ? const [
+                Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: Icon(Icons.lock, color: Colors.white38, size: 20),
+                ),
+              ]
+            : [
+                // Icônes compactes (padding réduit) pour laisser de la place
+                // au titre et éviter tout débordement.
+                if (widget.onOpenLive != null)
+                  IconButton(
+                    icon: const _LiveIcon(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                    splashRadius: 20,
+                    onPressed: widget.onOpenLive,
+                  ),
+                if (widget.onOpenDiscover != null)
+                  IconButton(
+                    icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 24),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                    splashRadius: 20,
+                    tooltip: 'Découvrir',
+                    onPressed: widget.onOpenDiscover,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.search, color: Colors.white, size: 25),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+                  splashRadius: 20,
+                  onPressed: () => _showSearch(context),
+                ),
+                const SizedBox(width: 6),
+              ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(child: _PulsingLogo())
           : _videos.isEmpty
           ? Center(
         child: Column(
@@ -305,6 +502,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             _likeState[_videos[index].id] = liked;
             _likeCount[_videos[index].id] = count;
           },
+          onUnlocked: _hardRefresh,
         ),
       ),
     );
@@ -479,6 +677,7 @@ class _VideoPage extends StatefulWidget {
   final bool? likedOverride;
   final int? likeCountOverride;
   final void Function(bool liked, int count)? onLikeChanged;
+  final VoidCallback? onUnlocked;
   const _VideoPage({
     required this.video,
     required this.isActive,
@@ -486,6 +685,7 @@ class _VideoPage extends StatefulWidget {
     this.likedOverride,
     this.likeCountOverride,
     this.onLikeChanged,
+    this.onUnlocked,
   });
 
   @override
@@ -494,11 +694,16 @@ class _VideoPage extends StatefulWidget {
 
 class _VideoPageState extends State<_VideoPage> {
   bool _isLiked = false;
+  bool _likePop = false; // animation "pop" du cœur au like
+  bool _savePop = false; // animation "pop" du bouton Enregistrer
+  bool _bigHeart = false; // grand cœur au double-tap (façon TikTok)
+  int _heartBurst = 0; // clé incrémentale : relance la volée de cœurs
   bool _isFollowing = false;
   int _likes = 0;
   bool _showPauseIcon = false;
   bool _isBuffering = false;
   bool _showDescription = false;
+  bool _reportedComplete = false;
 
   VideoPlayerController? get _ctrl => widget.controller;
   bool get _isInitialized => _ctrl?.value.isInitialized ?? false;
@@ -517,6 +722,16 @@ class _VideoPageState extends State<_VideoPage> {
     final buffering = _ctrl?.value.isBuffering ?? false;
     if (buffering != _isBuffering) {
       setState(() => _isBuffering = buffering);
+    }
+    // Vue "complétée" : regardée à ≥ 90% → signal d'impact créateur (une fois)
+    final val = _ctrl?.value;
+    if (!_reportedComplete && val != null && val.isInitialized &&
+        val.duration.inMilliseconds > 0 &&
+        val.position.inMilliseconds >= val.duration.inMilliseconds * 0.9) {
+      _reportedComplete = true;
+      if (widget.video.id != 'bee_fallback') {
+        ApiService.markVideoCompleted(widget.video.id);
+      }
     }
   }
 
@@ -551,13 +766,50 @@ class _VideoPageState extends State<_VideoPage> {
     });
   }
 
+  // Double-tap sur la vidéo = like + grand cœur + volée de petits cœurs
+  // qui s'envolent (façon TikTok/Instagram).
+  void _onDoubleTapLike() {
+    if (widget.video.id == 'bee_fallback') return;
+    if (!_isLiked) _toggleLike();
+    setState(() {
+      _bigHeart = true;
+      _heartBurst++; // relance une nouvelle volée de cœurs
+    });
+    Future.delayed(const Duration(milliseconds: 620), () {
+      if (mounted) setState(() => _bigHeart = false);
+    });
+  }
+
+  // Enregistrer / retirer des favoris (persistance locale, aucun serveur).
+  Future<void> _toggleSave() async {
+    if (widget.video.id == 'bee_fallback') return;
+    final now = await SavedVideos.toggle(widget.video);
+    if (!mounted) return;
+    setState(() => _savePop = true);
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) setState(() => _savePop = false);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(milliseconds: 1200),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: now ? AppColors.accent : Colors.white24,
+      content: Text(now ? 'Ajouté à tes favoris 🔖' : 'Retiré des favoris'),
+    ));
+  }
+
   Future<void> _toggleLike() async {
     if (widget.video.id == 'bee_fallback') return;
     final wasLiked = _isLiked;
     setState(() {
       _isLiked = !_isLiked;
       _likes += _isLiked ? 1 : -1;
+      if (_isLiked) _likePop = true; // le cœur "pop" à l'appui
     });
+    if (_isLiked) {
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) setState(() => _likePop = false);
+      });
+    }
     // Mémorise tout de suite pour que le like persiste au retour
     widget.onLikeChanged?.call(_isLiked, _likes);
     try {
@@ -591,66 +843,57 @@ class _VideoPageState extends State<_VideoPage> {
   }
 
   void _share() {
+    // ⚠️ Règle stricte : les vidéos de la Zone Dark ne sont JAMAIS partageables.
+    if (widget.video.isDark) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Les vidéos de la Zone Dark ne peuvent pas être partagées.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    // Lien d'aperçu web (ouvre une page avec miniature + accès à l'app)
+    final link = '${AppConfig.api}/v/${widget.video.id}';
+    final text = 'Regarde cette vidéo sur BeninPlay 🎬\n"${widget.video.title}"\n$link';
+    Share.share(text, subject: widget.video.title);
+  }
+
+  // ── Menu « Plus » : signaler la vidéo / bloquer le créateur ────────────────
+  // Exigences Google Play pour les applis à contenu utilisateur (UGC).
+  void _showMoreMenu(BuildContext context) {
+    if (widget.video.id == 'bee_fallback') return;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.normalSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
+      builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
+              title: const Text('Signaler cette vidéo',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showReportSheet(context);
+              },
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Partager la vidéo',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _ShareOption(
-                  icon: Icons.link,
-                  label: 'Copier lien',
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Lien copié !'),
-                        backgroundColor: AppColors.primary,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                ),
-                _ShareOption(
-                  icon: Icons.chat,
-                  label: 'WhatsApp',
-                  color: const Color(0xFF25D366),
-                  onTap: () => Navigator.pop(context),
-                ),
-                _ShareOption(
-                  icon: Icons.facebook,
-                  label: 'Facebook',
-                  color: const Color(0xFF1877F2),
-                  onTap: () => Navigator.pop(context),
-                ),
-                _ShareOption(
-                  icon: Icons.send,
-                  label: 'Message',
-                  onTap: () => Navigator.pop(context),
-                ),
-              ],
+            ListTile(
+              leading: const Icon(Icons.block, color: AppColors.error),
+              title: Text('Bloquer @${widget.video.creatorName}',
+                  style: const TextStyle(color: Colors.white)),
+              subtitle: const Text('Ses vidéos disparaîtront de ton fil',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _blockCreator();
+              },
             ),
             const SizedBox(height: 8),
           ],
@@ -659,113 +902,160 @@ class _VideoPageState extends State<_VideoPage> {
     );
   }
 
-  void _subscribe() {
+  void _showReportSheet(BuildContext context) {
+    const reasons = <String, String>{
+      'nudite': '🔞 Nudité ou contenu sexuel',
+      'violence': '⚔️ Violence',
+      'haine': '😡 Discours haineux',
+      'arnaque': '💸 Arnaque ou fraude',
+      'spam': '📢 Spam',
+      'mineur': '🚨 Mineur en danger',
+      'autre': '❓ Autre',
+    };
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.normalSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
+      builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('Pourquoi signales-tu cette vidéo ?',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ),
-            const SizedBox(height: 16),
-            CircleAvatar(
-              radius: 36,
-              backgroundColor: AppColors.primary,
-              child: Text(
-                widget.video.creatorName[0],
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              widget.video.creatorName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Soutenez ce créateur',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Envoyer un tip',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [100, 250, 500, 1000].map((amount) =>
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Tip de $amount FCFA envoyé à ${widget.video.creatorName} ❤️'),
-                          backgroundColor: AppColors.primary,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
-                      ),
-                      child: Text(
-                        '$amount F',
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ).toList(),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('S\'abonner au créateur — 2 000 FCFA/mois'),
-            ),
+            ...reasons.entries.map((e) => ListTile(
+                  dense: true,
+                  title: Text(e.value, style: const TextStyle(color: Colors.white)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final res = await ApiService.reportVideo(widget.video.id, e.key);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(res['message']?.toString() ??
+                          'Signalement envoyé. Merci !'),
+                      backgroundColor: res['success'] == true
+                          ? AppColors.success
+                          : AppColors.error,
+                    ));
+                  },
+                )),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
+  Future<void> _blockCreator() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: Text('Bloquer @${widget.video.creatorName} ?',
+            style: const TextStyle(color: Colors.white, fontSize: 17)),
+        content: const Text(
+          'Ses vidéos disparaîtront de ton fil. Tu pourras le débloquer plus tard depuis son profil.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Bloquer')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final res = await ApiService.blockUser(widget.video.creatorId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(res['success'] == true
+          ? '@${widget.video.creatorName} bloqué. Actualise ton fil.'
+          : (res['message']?.toString() ?? 'Blocage impossible')),
+      backgroundColor:
+          res['success'] == true ? AppColors.success : AppColors.error,
+    ));
+  }
+
+  // Écran de déblocage payant (vidéo vendue à l'unité)
+  Widget _buildPaywall(BuildContext context) {
+    final price = widget.video.price.toInt();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(color: const Color(0xFF101018)),
+        if (widget.video.thumbnailUrl != null && widget.video.thumbnailUrl!.isNotEmpty)
+          Image.network(widget.video.thumbnailUrl!, fit: BoxFit.cover,
+              color: Colors.black.withValues(alpha: 0.6), colorBlendMode: BlendMode.darken,
+              errorBuilder: (_, __, ___) => const SizedBox()),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_rounded, color: Colors.white, size: 56),
+                const SizedBox(height: 16),
+                Text(widget.video.title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('par @${widget.video.creatorName.toLowerCase().replaceAll(' ', '_')}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final paid = await MomoPaySheet.show(
+                      context,
+                      amount: price,
+                      type: 'video',
+                      description: 'Achat vidéo : ${widget.video.title}',
+                      videoId: widget.video.id,
+                    );
+                    if (paid == true) widget.onUnlocked?.call();
+                  },
+                  icon: const Icon(Icons.lock_open_rounded, size: 20),
+                  label: Text('Débloquer pour $price FCFA',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Paiement unique — accès à vie à cette vidéo',
+                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Vidéo payante non achetée → écran de déblocage
+    if (widget.video.isLocked) {
+      return _buildPaywall(context);
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
         // ── Vidéo ────────────────────────────────────────────────────────
         GestureDetector(
           onTap: _togglePlayPause,
+          onDoubleTap: _onDoubleTapLike,
           // Glisser vers la gauche → ouvre le profil du créateur
           onHorizontalDragEnd: (details) {
             if ((details.primaryVelocity ?? 0) < -250) _openCreator();
@@ -773,16 +1063,85 @@ class _VideoPageState extends State<_VideoPage> {
           child: Container(
             color: Colors.black,
             child: _isInitialized && _ctrl != null
-                ? FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _ctrl!.value.size.width,
-                height: _ctrl!.value.size.height,
-                child: VideoPlayer(_ctrl!),
+                ? LayoutBuilder(builder: (context, cts) {
+                    final area = Size(cts.maxWidth, cts.maxHeight);
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Filtre couleur "façon Snapchat" appliqué à la lecture.
+                        VideoFilters.apply(
+                          widget.video.filter,
+                          SizedBox.expand(
+                            child: FittedBox(
+                              // Vidéo verticale (aspect < 1) → remplit tout l'écran.
+                              // Vidéo horizontale → affichée en entier, sans couper.
+                              fit: _ctrl!.value.aspectRatio < 1.0
+                                  ? BoxFit.cover
+                                  : BoxFit.contain,
+                              clipBehavior: Clip.hardEdge,
+                              child: SizedBox(
+                                width: _ctrl!.value.size.width,
+                                height: _ctrl!.value.size.height,
+                                child: VideoPlayer(_ctrl!),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Textes / emojis posés lors de l'édition.
+                        OverlayLayer(items: widget.video.overlays, size: area),
+                      ],
+                    );
+                  })
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Miniature affichée INSTANTANÉMENT pendant que la
+                      // vidéo charge (comme TikTok) — fini l'écran noir.
+                      if (widget.video.thumbnailUrl != null &&
+                          widget.video.thumbnailUrl!.isNotEmpty)
+                        VideoFilters.apply(
+                          widget.video.filter,
+                          CachedNetworkImage(
+                            imageUrl: widget.video.thumbnailUrl!,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 80),
+                            errorWidget: (_, __, ___) => const SizedBox(),
+                          ),
+                        ),
+                      const Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.primary, strokeWidth: 2.5),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+
+        // ── Volée de petits cœurs qui s'envolent (façon TikTok) ──────────
+        if (_heartBurst > 0)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _FloatingHearts(key: ValueKey(_heartBurst)),
+            ),
+          ),
+
+        // ── Grand cœur du double-tap (façon TikTok) ──────────────────────
+        IgnorePointer(
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _bigHeart ? 1 : 0,
+              duration: const Duration(milliseconds: 140),
+              child: AnimatedScale(
+                scale: _bigHeart ? 1.0 : 0.4,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.redAccent,
+                  size: 96,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 24)],
+                ),
               ),
-            )
-                : const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
             ),
           ),
         ),
@@ -824,6 +1183,30 @@ class _VideoPageState extends State<_VideoPage> {
                   end: Alignment.bottomCenter,
                   colors: [Colors.transparent, Colors.transparent, Colors.black38, Colors.black87],
                   stops: [0, 0.45, 0.75, 1],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // ── Voile dégradé en bas : le texte reste lisible même sur une
+        //    vidéo claire (comme TikTok) ─────────────────────────────────
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: Container(
+              height: 190,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Color(0x59000000),
+                    Color(0xA6000000),
+                  ],
                 ),
               ),
             ),
@@ -966,11 +1349,16 @@ class _VideoPageState extends State<_VideoPage> {
           bottom: 24,
           child: Column(
             children: [
-              _ActionButton(
-                icon: _isLiked ? Icons.favorite : Icons.favorite_border,
-                color: _isLiked ? Colors.red : Colors.white,
-                label: _formatCount(_likes),
-                onTap: _toggleLike,
+              AnimatedScale(
+                scale: _likePop ? 1.35 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+                child: _ActionButton(
+                  icon: _isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: _isLiked ? Colors.red : Colors.white,
+                  label: _formatCount(_likes),
+                  onTap: _toggleLike,
+                ),
               ),
               const SizedBox(height: 18),
               _ActionButton(
@@ -979,17 +1367,52 @@ class _VideoPageState extends State<_VideoPage> {
                 onTap: () => _showComments(context),
               ),
               const SizedBox(height: 18),
-              _ActionButton(
-                icon: Icons.share_outlined,
-                label: 'Partager',
-                onTap: _share,
-              ),
-              const SizedBox(height: 18),
+              // ── Enregistrer / Favoris (façon TikTok) ────────────────────
+              if (widget.video.id != 'bee_fallback') ...[
+                ValueListenableBuilder<Set<String>>(
+                  valueListenable: SavedVideos.ids,
+                  builder: (_, ids, __) {
+                    final saved = ids.contains(widget.video.id);
+                    return AnimatedScale(
+                      scale: _savePop ? 1.35 : 1.0,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutBack,
+                      child: _ActionButton(
+                        icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                        color: saved ? AppColors.accent : Colors.white,
+                        label: saved ? 'Enregistré' : 'Enregistrer',
+                        onTap: _toggleSave,
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 18),
+              ],
+              // La Zone Dark n'est jamais partageable → pas de bouton Partager
+              if (!widget.video.isDark) ...[
+                _ActionButton(
+                  icon: Icons.share_outlined,
+                  label: 'Partager',
+                  onTap: _share,
+                ),
+                const SizedBox(height: 18),
+              ],
               _ActionButton(
                 icon: Icons.monetization_on_outlined,
                 label: 'Soutenir',
                 color: AppColors.accent,
-                onTap: _subscribe,
+                onTap: () => TipSheet.show(
+                  context,
+                  creatorId: widget.video.creatorId,
+                  creatorName: widget.video.creatorName,
+                  videoId: widget.video.id,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _ActionButton(
+                icon: Icons.more_horiz,
+                label: 'Plus',
+                onTap: () => _showMoreMenu(context),
               ),
               const SizedBox(height: 18),
               _RotatingDisk(
@@ -1057,6 +1480,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
+  String? _replyingTo; // @auteur auquel on répond (affiché au-dessus du champ)
   bool _sending = false;
 
   @override
@@ -1068,7 +1493,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void dispose() {
     _ctrl.dispose();
+    _focus.dispose();
     super.dispose();
+  }
+
+  // Prépare une réponse : préremplit le champ avec @auteur et donne le focus.
+  void _startReply(String author) {
+    final handle = '@${author.toLowerCase().replaceAll(' ', '_')}';
+    setState(() => _replyingTo = author);
+    _ctrl.text = '$handle ';
+    _ctrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: _ctrl.text.length),
+    );
+    _focus.requestFocus();
   }
 
   Future<void> _loadComments() async {
@@ -1091,6 +1528,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     try {
       await ApiService.addComment(widget.videoId, text);
       _ctrl.clear();
+      setState(() => _replyingTo = null);
       await _loadComments();
     } catch (_) {
       if (mounted) {
@@ -1143,21 +1581,35 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 final c = _comments[i];
                 final author = (c['author_name'] ?? c['user_name'] ?? c['phone'] ?? 'Anonyme').toString();
                 final content = (c['content'] ?? '').toString();
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary,
-                    radius: 16,
-                    child: Text(
-                      author.isNotEmpty ? author[0].toUpperCase() : '?',
-                      style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(author, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                  subtitle: Text(content, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                return _CommentTile(
+                  author: author,
+                  content: content,
+                  onReply: () => _startReply(author),
                 );
               },
             ),
           ),
+          // Bandeau "Réponse à @x" avec bouton pour annuler.
+          if (_replyingTo != null)
+            Container(
+              width: double.infinity,
+              color: Colors.white10,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  Text('Réponse à @${_replyingTo!.toLowerCase().replaceAll(' ', '_')}',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() => _replyingTo = null);
+                      _ctrl.clear();
+                    },
+                    child: const Icon(Icons.close, color: Colors.white38, size: 16),
+                  ),
+                ],
+              ),
+            ),
           SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
@@ -1169,6 +1621,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
+                      focusNode: _focus,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         hintText: 'Ajouter un commentaire...',
@@ -1193,6 +1646,89 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Tuile de commentaire : like (local) + Répondre ──────────────────────────
+
+class _CommentTile extends StatefulWidget {
+  final String author;
+  final String content;
+  final VoidCallback onReply;
+  const _CommentTile({
+    required this.author,
+    required this.content,
+    required this.onReply,
+  });
+
+  @override
+  State<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends State<_CommentTile> {
+  bool _liked = false;
+  int _likes = 0;
+
+  void _toggleLike() {
+    setState(() {
+      _liked = !_liked;
+      _likes += _liked ? 1 : -1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: AppColors.primary,
+            radius: 16,
+            child: Text(
+              widget.author.isNotEmpty ? widget.author[0].toUpperCase() : '?',
+              style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.author,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(widget.content,
+                    style: const TextStyle(color: Colors.white, fontSize: 14)),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: widget.onReply,
+                  child: const Text('Répondre',
+                      style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            children: [
+              GestureDetector(
+                onTap: _toggleLike,
+                child: Icon(
+                  _liked ? Icons.favorite : Icons.favorite_border,
+                  color: _liked ? Colors.red : Colors.white38,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(_likes > 0 ? '$_likes' : '',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
           ),
         ],
       ),
@@ -1230,39 +1766,70 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-class _ShareOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
+// ── Volée de cœurs qui montent et s'estompent (double-tap) ──────────────────
 
-  const _ShareOption({
-    required this.icon,
-    required this.label,
-    this.color = Colors.white,
-    required this.onTap,
-  });
+class _FloatingHearts extends StatefulWidget {
+  const _FloatingHearts({super.key});
+
+  @override
+  State<_FloatingHearts> createState() => _FloatingHeartsState();
+}
+
+class _FloatingHeartsState extends State<_FloatingHearts>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+        ..forward();
+
+  // 6 cœurs avec un décalage horizontal, une taille et une rotation aléatoires
+  // (déterministes à partir de l'index → pas besoin d'import random).
+  static const _n = 6;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.3)),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (_, cts) {
+        final cx = cts.maxWidth / 2;
+        final cy = cts.maxHeight / 2;
+        return AnimatedBuilder(
+          animation: _c,
+          builder: (_, __) {
+            final t = _c.value;
+            return Stack(
+              children: List.generate(_n, (i) {
+                final delay = i * 0.06;
+                final p = ((t - delay) / (1 - delay)).clamp(0.0, 1.0);
+                if (p <= 0) return const SizedBox.shrink();
+                final dir = (i.isEven ? 1 : -1);
+                final spread = 26.0 + (i % 3) * 18.0;
+                final dx = dir * spread * p;
+                final dy = -160.0 * p * (1 + (i % 2) * 0.25);
+                final size = 22.0 + (i % 3) * 8.0;
+                final opacity = (1 - p).clamp(0.0, 1.0);
+                return Positioned(
+                  left: cx + dx - size / 2,
+                  top: cy + dy - size / 2,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.rotate(
+                      angle: dir * 0.25 * p,
+                      child: Icon(Icons.favorite,
+                          color: i.isEven ? Colors.redAccent : Colors.pinkAccent,
+                          size: size),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1364,6 +1931,110 @@ class _RotatingDiskState extends State<_RotatingDisk>
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Logo pulsant (chargement "hypnotique" du fil) ────────────────────────────
+
+class _PulsingLogo extends StatefulWidget {
+  const _PulsingLogo();
+
+  @override
+  State<_PulsingLogo> createState() => _PulsingLogoState();
+}
+
+class _PulsingLogoState extends State<_PulsingLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Container(
+          padding: const EdgeInsets.all(26),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.25 + t * 0.35),
+                blurRadius: 30 + t * 40,
+                spreadRadius: 4 + t * 10,
+              ),
+            ],
+          ),
+          child: Transform.scale(
+            scale: 0.92 + t * 0.16,
+            child: const BpLogo(size: 74),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Icône Live avec point rouge qui "respire" ───────────────────────────────
+
+class _LiveIcon extends StatefulWidget {
+  const _LiveIcon();
+
+  @override
+  State<_LiveIcon> createState() => _LiveIconState();
+}
+
+class _LiveIconState extends State<_LiveIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+        ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Taille fixe : le point rouge reste À L'INTÉRIEUR des limites (pas d'overflow).
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.live_tv_outlined, color: Colors.white, size: 25),
+          Positioned(
+            top: 1,
+            right: 1,
+            child: FadeTransition(
+              opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: Colors.redAccent.withValues(alpha: 0.7), blurRadius: 6),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
