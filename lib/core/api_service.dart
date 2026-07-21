@@ -328,6 +328,22 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  /// Assistant IA : envoie un message + l'historique récent, renvoie la réponse.
+  static Future<String> aiChat(String message,
+      {List<Map<String, String>> history = const []}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/ai/chat'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'message': message, 'history': history}),
+      );
+      final data = jsonDecode(res.body);
+      return (data['reply'] ?? "Je n'ai pas pu répondre.").toString();
+    } catch (_) {
+      return "Connexion impossible. Réessaie.";
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getComments(String videoId) async {
     final res = await http.get(
       Uri.parse('${AppConfig.api}/api/videos/$videoId/comments'),
