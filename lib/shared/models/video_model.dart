@@ -9,6 +9,7 @@ class VideoModel {
   final String creatorId;
   final String creatorName;
   final String? creatorAvatar;
+  final bool creatorVerified; // badge bleu (créateur vérifié)
   final String title;
   final String? description;
   final String videoUrl;
@@ -31,6 +32,7 @@ class VideoModel {
     required this.creatorId,
     required this.creatorName,
     this.creatorAvatar,
+    this.creatorVerified = false,
     required this.title,
     this.description,
     required this.videoUrl,
@@ -81,6 +83,7 @@ class VideoModel {
     creatorId: json['creator_id'] ?? '',
     creatorName: json['creator_name'] ?? json['creator_id'] ?? 'Créateur',
     creatorAvatar: json['creator_avatar'],
+    creatorVerified: json['creator_verified'] == true,
     title: json['title'] ?? '',
     description: json['description'],
     videoUrl: json['video_url'] ?? '',

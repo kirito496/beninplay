@@ -17,6 +17,7 @@ import '../../shared/widgets/bp_logo.dart';
 import '../../services/video_cache.dart';
 import '../../services/saved_videos.dart';
 import '../../services/seen_videos.dart';
+import '../search/search_screen.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -509,15 +510,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   void _showSearch(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.normalSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const _SearchSheet(),
-    );
+    // Recherche à onglets réelle (Top / Comptes / Vidéos).
+    SearchScreen.open(context);
   }
 }
 
@@ -1254,6 +1248,10 @@ class _VideoPageState extends State<_VideoPage> {
                       ),
                     ),
                   ),
+                  if (widget.video.creatorVerified) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.verified, color: AppColors.primary, size: 15),
+                  ],
                   const SizedBox(width: 8),
                   GestureDetector(
                     onTap: _toggleFollow,

@@ -19,6 +19,7 @@ import '../discover/leaderboard_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../saved/saved_videos_screen.dart';
 import '../ai/ai_chat_screen.dart';
+import '../friends/add_friends_screen.dart';
 import 'creator_stats_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -1279,6 +1280,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.smart_toy_outlined,
                     label: 'Assistant IA 🤖',
                     onTap: () => AiChatScreen.open(context),
+                  ),
+                  _MenuItem(
+                    icon: Icons.qr_code_2,
+                    label: 'Ajouter des amis',
+                    onTap: () => AddFriendsScreen.open(context),
                   ),
                   _MenuItem(
                     icon: Icons.bookmark_outline,
