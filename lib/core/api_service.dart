@@ -163,9 +163,12 @@ class ApiService {
     return list.whereType<Map<String, dynamic>>().toList();
   }
 
-  static Future<Map<String, dynamic>> getVideos({int page = 1}) async {
+  static Future<Map<String, dynamic>> getVideos({int page = 1, String? exclude}) async {
+    final ex = (exclude != null && exclude.isNotEmpty)
+        ? '&exclude=${Uri.encodeQueryComponent(exclude)}'
+        : '';
     final res = await http.get(
-      Uri.parse('${AppConfig.api}/api/videos?page=$page&limit=20'),
+      Uri.parse('${AppConfig.api}/api/videos?page=$page&limit=20$ex'),
       headers: await _headers(auth: true),
     );
     return jsonDecode(res.body);

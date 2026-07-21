@@ -16,6 +16,7 @@ import '../upload/video_effects.dart';
 import '../../shared/widgets/bp_logo.dart';
 import '../../services/video_cache.dart';
 import '../../services/saved_videos.dart';
+import '../../services/seen_videos.dart';
 
 class VideoFeedScreen extends StatefulWidget {
   final bool isDark;
@@ -321,6 +322,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (_viewed.contains(v.id)) return;
     _viewed.add(v.id);
     ApiService.registerView(v.id);
+    SeenVideos.add(v.id); // mémorise pour ne plus la reproposer
   }
 
   Future<void> _loadVideos() async {
@@ -333,8 +335,17 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       } else if (_showFollowing) {
         raw = await ApiService.getFollowingFeed(page: _page);
       } else {
-        final data = await ApiService.getVideos(page: _page);
-        final List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+        // Fil "Pour toi" : on envoie les vidéos DÉJÀ VUES pour ne jamais
+        // retomber sur les mêmes (même en rafraîchissant).
+        final exclude = await SeenVideos.excludeParam();
+        var data = await ApiService.getVideos(page: _page, exclude: exclude);
+        List<dynamic> list = data['videos'] ?? data['data'] ?? [];
+        // Plus rien de neuf (tout a été vu) → on repart pour un nouveau cycle.
+        if (list.isEmpty && _page == 1 && exclude.isNotEmpty) {
+          await SeenVideos.reset();
+          data = await ApiService.getVideos(page: _page);
+          list = data['videos'] ?? data['data'] ?? [];
+        }
         raw = list.whereType<Map<String, dynamic>>().toList();
       }
       if (!mounted) return;

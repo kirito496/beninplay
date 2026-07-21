@@ -7,6 +7,7 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
 import 'services/saved_videos.dart';
+import 'services/seen_videos.dart';
 import 'shared/widgets/bp_logo.dart';
 
 void main() async {
@@ -16,6 +17,7 @@ void main() async {
     anonKey: AppConfig.supabaseAnonKey,
   );
   await SavedVideos.init(); // précharge les favoris (état des boutons 🔖)
+  await SeenVideos.init(); // précharge les vidéos déjà vues (fil sans répétition)
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
