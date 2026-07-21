@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../profile/creator_profile_screen.dart';
+import '../stories/stories_bar.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -134,6 +135,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Stories (24 h) ────────────────────────────────────
+          const Text('📸 Stories', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const StoriesBar(),
+          const SizedBox(height: 20),
           if (_popularTags.isNotEmpty) ...[
             const Text('🔥 Tendances', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
