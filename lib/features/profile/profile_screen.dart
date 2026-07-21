@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1317,6 +1318,33 @@ class _VideoThumb extends StatefulWidget {
 
   static final Map<String, String> _cache = {};
 
+  // ── Limiteur de concurrence ────────────────────────────────────────────
+  // Générer une miniature = TÉLÉCHARGER + DÉCODER la vidéo distante. Dans une
+  // grille (« Mes vidéos »), en lancer 10+ à la fois SATURE le fil principal
+  // et gèle l'appli (l'écran ouvert par-dessus, ex. Boost, reste vide). On en
+  // autorise donc 2 à la fois ; les autres attendent leur tour.
+  static const _maxConcurrent = 2;
+  static int _inFlight = 0;
+  static final List<Completer<void>> _waiters = [];
+
+  static Future<void> _acquire() async {
+    if (_inFlight < _maxConcurrent) {
+      _inFlight++;
+      return;
+    }
+    final c = Completer<void>();
+    _waiters.add(c);
+    await c.future; // le créneau nous est transmis à la libération
+  }
+
+  static void _release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete(); // passe le créneau au suivant
+    } else {
+      _inFlight--;
+    }
+  }
+
   @override
   State<_VideoThumb> createState() => _VideoThumbState();
 }
@@ -1338,6 +1366,7 @@ class _VideoThumbState extends State<_VideoThumb> {
       setState(() => _path = _VideoThumb._cache[url]);
       return;
     }
+    await _VideoThumb._acquire(); // au plus 2 générations simultanées
     try {
       final dir = await getTemporaryDirectory();
       final thumb = await VideoThumbnail.thumbnailFile(
@@ -1347,11 +1376,14 @@ class _VideoThumbState extends State<_VideoThumb> {
         maxWidth: 200,
         quality: 50,
       );
-      if (thumb != null && mounted) {
+      if (thumb != null) {
         _VideoThumb._cache[url] = thumb;
-        setState(() => _path = thumb);
+        if (mounted) setState(() => _path = thumb);
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _VideoThumb._release();
+    }
   }
 
   @override

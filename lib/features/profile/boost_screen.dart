@@ -138,9 +138,13 @@ class _BoostScreenState extends State<BoostScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        children: [
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                children: [
           // ── Portée estimée ──────────────────────────────────
           Container(
             width: double.infinity,
@@ -266,28 +270,41 @@ class _BoostScreenState extends State<BoostScreen> {
                 _tags.contains(t) ? _tags.remove(t) : (_tags.length < 10 ? _tags.add(t) : null);
               }))).toList()),
           ],
-          const SizedBox(height: 24),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('$_amount FCFA', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              Text('$_days jour${_days > 1 ? 's' : ''} de boost', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-            ])),
-            ElevatedButton(
-              onPressed: _amount >= 500 ? _pay : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                minimumSize: const Size(0, 48),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  const SizedBox(height: 24),
+                ],
               ),
-              child: const Text('Payer', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
             ),
-          ]),
+            // ── Barre du bas : montant + bouton Payer ──────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFF141414),
+                border: Border(top: BorderSide(color: Colors.white12)),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$_amount FCFA', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text('$_days jour${_days > 1 ? 's' : ''} de boost', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: _amount >= 500 ? _pay : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                    minimumSize: const Size(0, 48),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Payer', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ]),
+            ),
+          ],
         ),
       ),
     );
