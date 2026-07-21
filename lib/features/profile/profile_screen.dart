@@ -20,6 +20,8 @@ import '../notifications/notifications_screen.dart';
 import '../saved/saved_videos_screen.dart';
 import '../ai/ai_chat_screen.dart';
 import '../friends/add_friends_screen.dart';
+import '../settings/settings_screen.dart';
+import '../../core/app_prefs.dart';
 import 'creator_stats_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -799,11 +801,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications', onTap: () {}),
-            _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité', onTap: () {}),
-            _SettingItem(icon: Icons.security, label: 'Sécurité du compte', onTap: () {}),
-            _SettingItem(icon: Icons.language, label: 'Langue : Français', onTap: () {}),
-            _SettingItem(icon: Icons.info_outline, label: 'À propos de BeninPlay', onTap: () {}),
+            _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications',
+                onTap: () { Navigator.pop(context); NotificationsSettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité',
+                onTap: () { Navigator.pop(context); PrivacySettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.security, label: 'Sécurité du compte',
+                onTap: () { Navigator.pop(context); SecuritySettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.language, label: 'Langue : ${AppPrefs.labelFor(AppPrefs.language.value)}',
+                onTap: () { Navigator.pop(context); LanguageSettingsScreen.open(context); }),
+            _SettingItem(icon: Icons.info_outline, label: 'À propos de BeninPlay',
+                onTap: () { Navigator.pop(context); AboutScreen.open(context); }),
             const SizedBox(height: 8),
           ],
         ),
