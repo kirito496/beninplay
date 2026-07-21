@@ -2,13 +2,24 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/constants/app_colors.dart';
+import '../../services/sound_service.dart';
 import 'video_effects.dart';
 
-/// Résultat de l'édition : filtre choisi + overlays (texte / emojis).
+/// Résultat de l'édition : filtre + overlays (texte / emojis / dessin) +
+/// découpe (trim) + musique.
 class EditResult {
   final String? filter; // null = aucun
   final List<VideoOverlayItem> overlays;
-  const EditResult({this.filter, this.overlays = const []});
+  final double trimStart; // secondes (0 = début)
+  final double trimEnd; // secondes (0 = jusqu'à la fin)
+  final String? musicSoundId; // son à mixer par-dessus (null = aucun)
+  const EditResult({
+    this.filter,
+    this.overlays = const [],
+    this.trimStart = 0,
+    this.trimEnd = 0,
+    this.musicSoundId,
+  });
 }
 
 /// Éditeur vidéo "façon Snapchat" : filtres couleur, texte et emojis
@@ -28,6 +39,21 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   String _filter = 'aucun';
   final List<VideoOverlayItem> _items = [];
   bool _overTrash = false;
+
+  // ── Dessin ──
+  bool _drawing = false; // mode pinceau actif
+  int _brushColor = 0xFFFF5252;
+  final List<DrawStroke> _strokes = [];
+  List<Offset>? _currentStroke;
+
+  // ── Découpe (trim) ──
+  double _trimStart = 0; // secondes
+  double _trimEnd = 0; // 0 = jusqu'à la fin
+  double get _videoSeconds => (_ctrl?.value.duration.inMilliseconds ?? 0) / 1000.0;
+
+  // ── Musique ──
+  String? _musicSoundId;
+  String _musicTitle = '';
 
   // Stickers par catégories (façon Canva/TikTok).
   static const Map<String, List<String>> _stickerCats = {
@@ -128,11 +154,120 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   }
 
   void _finish() {
+    final overlays = List.of(_items);
+    // Le dessin est stocké comme un overlay spécial (type 'draw') → il est
+    // rejoué à la lecture, exactement comme le texte/les emojis.
+    if (_strokes.isNotEmpty) {
+      overlays.add(VideoOverlayItem(type: 'draw', value: DrawStroke.encode(_strokes)));
+    }
     Navigator.pop(
       context,
       EditResult(
         filter: _filter == 'aucun' ? null : _filter,
-        overlays: List.of(_items),
+        overlays: overlays,
+        trimStart: _trimStart,
+        trimEnd: _trimEnd,
+        musicSoundId: _musicSoundId,
+      ),
+    );
+  }
+
+  Offset _rel(Offset p, Size a) =>
+      Offset((p.dx / a.width).clamp(0.0, 1.0), (p.dy / a.height).clamp(0.0, 1.0));
+
+  // Feuille de découpe (trim) : début + fin.
+  void _openTrim() {
+    if (_videoSeconds <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aperçu pas encore prêt pour la découpe')));
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final total = _videoSeconds;
+          final end = _trimEnd <= 0 ? total : _trimEnd;
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('✂️ Découper la vidéo', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Text('Garder de ${_trimStart.toStringAsFixed(1)}s à ${end.toStringAsFixed(1)}s (durée : ${(end - _trimStart).toStringAsFixed(1)}s)',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              const SizedBox(height: 8),
+              RangeSlider(
+                values: RangeValues(_trimStart.clamp(0, total), end.clamp(0, total)),
+                min: 0, max: total,
+                divisions: total > 1 ? total.ceil() : 1,
+                activeColor: AppColors.primary, inactiveColor: Colors.white24,
+                labels: RangeLabels('${_trimStart.toStringAsFixed(1)}s', '${end.toStringAsFixed(1)}s'),
+                onChanged: (v) {
+                  setSheet(() { setState(() { _trimStart = v.start; _trimEnd = v.end >= total ? 0 : v.end; }); });
+                  final ms = (v.start * 1000).round();
+                  _ctrl?.seekTo(Duration(milliseconds: ms));
+                },
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () { setSheet(() => setState(() { _trimStart = 0; _trimEnd = 0; })); },
+                  child: const Text('Réinitialiser', style: TextStyle(color: Colors.white54)),
+                ),
+              ),
+              const Text('Coupe rapide (sans ré-encodage) : le début/la fin peuvent s\'arrondir à l\'image clé la plus proche.',
+                  style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  // Feuille de choix de musique (sons populaires réutilisables).
+  void _openMusic() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.4, expand: false,
+        builder: (_, sc) => FutureBuilder<List<SoundInfo>>(
+          future: SoundService.popular(),
+          builder: (ctx, snap) {
+            final sounds = snap.data ?? [];
+            return ListView(
+              controller: sc,
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text('🎵 Ajouter une musique', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                if (_musicSoundId != null)
+                  ListTile(
+                    leading: const Icon(Icons.music_off, color: AppColors.error),
+                    title: const Text('Retirer la musique', style: TextStyle(color: Colors.white)),
+                    onTap: () { setState(() { _musicSoundId = null; _musicTitle = ''; }); Navigator.pop(context); },
+                  ),
+                if (snap.connectionState == ConnectionState.waiting)
+                  const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: AppColors.primary)))
+                else if (sounds.isEmpty)
+                  const Padding(padding: EdgeInsets.all(24),
+                      child: Center(child: Text('Aucune musique disponible pour l\'instant.', style: TextStyle(color: Colors.white38))))
+                else
+                  ...sounds.map((s) => ListTile(
+                        leading: const Icon(Icons.music_note, color: AppColors.primary),
+                        title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                        subtitle: Text('@${s.creatorName} · ${s.usesCount} vidéos', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        trailing: _musicSoundId == s.id ? const Icon(Icons.check_circle, color: AppColors.primary) : null,
+                        onTap: () { setState(() { _musicSoundId = s.id; _musicTitle = s.title; }); Navigator.pop(context); },
+                      )),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -223,10 +358,11 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                                       color: AppColors.primary)),
                     ),
 
-                    // Overlays déplaçables (texte / emoji)
+                    // Overlays déplaçables (texte / emoji) — figés pendant le dessin
                     ..._items.map((it) => _DraggableItem(
                           item: it,
                           area: area,
+                          locked: _drawing,
                           onMove: (dx, dy, overTrash) => setState(() {
                             it.dx = dx;
                             it.dy = dy;
@@ -240,7 +376,35 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                           },
                         )),
 
-                    // Outils (droite) : Texte, Emoji
+                    // Dessin : traits déjà tracés + trait en cours
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: DrawPainter([
+                            ..._strokes,
+                            if (_currentStroke != null && _currentStroke!.isNotEmpty)
+                              DrawStroke(points: _currentStroke!, color: _brushColor),
+                          ]),
+                        ),
+                      ),
+                    ),
+
+                    // Capture des traits (uniquement en mode pinceau)
+                    if (_drawing)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onPanStart: (d) => setState(() => _currentStroke = [_rel(d.localPosition, area)]),
+                          onPanUpdate: (d) => setState(() => _currentStroke?.add(_rel(d.localPosition, area))),
+                          onPanEnd: (_) => setState(() {
+                            if (_currentStroke != null && _currentStroke!.isNotEmpty) {
+                              _strokes.add(DrawStroke(points: List.of(_currentStroke!), color: _brushColor));
+                            }
+                            _currentStroke = null;
+                          }),
+                        ),
+                      ),
+
+                    // Outils (droite) : Texte, Emoji, Dessin, Découper, Musique
                     Positioned(
                       top: 12,
                       right: 10,
@@ -249,9 +413,48 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                           _tool(Icons.title, 'Texte', _addText),
                           const SizedBox(height: 14),
                           _tool(Icons.emoji_emotions_outlined, 'Emoji', _addEmoji),
+                          const SizedBox(height: 14),
+                          _tool(Icons.brush, 'Dessin', () => setState(() => _drawing = !_drawing),
+                              active: _drawing),
+                          const SizedBox(height: 14),
+                          _tool(Icons.content_cut, 'Couper', _openTrim,
+                              active: _trimStart > 0 || _trimEnd > 0),
+                          const SizedBox(height: 14),
+                          _tool(Icons.music_note, 'Musique', _openMusic,
+                              active: _musicSoundId != null),
                         ],
                       ),
                     ),
+
+                    // Barre du pinceau (couleurs + annuler) quand on dessine
+                    if (_drawing)
+                      Positioned(
+                        left: 10, right: 60, bottom: 14,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black54, borderRadius: BorderRadius.circular(24)),
+                          child: Row(children: [
+                            for (final c in const [0xFFFF5252, 0xFFFFFFFF, 0xFF00C853, 0xFFFFD600, 0xFF2196F3, 0xFF000000])
+                              GestureDetector(
+                                onTap: () => setState(() => _brushColor = c),
+                                child: Container(
+                                  width: 24, height: 24,
+                                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                                  decoration: BoxDecoration(
+                                    color: Color(c), shape: BoxShape.circle,
+                                    border: Border.all(color: _brushColor == c ? AppColors.primary : Colors.white38, width: _brushColor == c ? 3 : 1),
+                                  ),
+                                ),
+                              ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => setState(() { if (_strokes.isNotEmpty) _strokes.removeLast(); }),
+                              child: const Icon(Icons.undo, color: Colors.white, size: 22),
+                            ),
+                          ]),
+                        ),
+                      ),
 
                     // Corbeille (visible en glissant un élément)
                     if (_overTrash)
@@ -332,7 +535,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         ),
       );
 
-  Widget _tool(IconData icon, String label, VoidCallback onTap) =>
+  Widget _tool(IconData icon, String label, VoidCallback onTap, {bool active = false}) =>
       GestureDetector(
         onTap: onTap,
         child: Column(
@@ -340,10 +543,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.black45,
+                color: active ? AppColors.primary : Colors.black45,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: Icon(icon, color: Colors.white, size: 24),
+              child: Icon(icon, color: active ? Colors.black : Colors.white, size: 24),
             ),
             const SizedBox(height: 2),
             Text(label,
@@ -357,11 +560,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
 class _DraggableItem extends StatefulWidget {
   final VideoOverlayItem item;
   final Size area;
+  final bool locked; // vrai pendant le dessin → on ne déplace pas
   final void Function(double dx, double dy, bool overTrash) onMove;
   final VoidCallback onDrop;
   const _DraggableItem({
     required this.item,
     required this.area,
+    this.locked = false,
     required this.onMove,
     required this.onDrop,
   });
@@ -389,23 +594,26 @@ class _DraggableItemState extends State<_DraggableItem> {
       left: left,
       top: (it.dy * widget.area.height - fontSize)
           .clamp(0.0, widget.area.height),
-      child: GestureDetector(
-        onScaleStart: (_) => _baseScale = it.scale,
-        onScaleUpdate: (d) {
-          final nx = (it.dx * widget.area.width + d.focalPointDelta.dx)
-              .clamp(0.0, widget.area.width);
-          final ny = (it.dy * widget.area.height + d.focalPointDelta.dy)
-              .clamp(0.0, widget.area.height);
-          final overTrash = ny > widget.area.height - 170 &&
-              (nx - widget.area.width / 2).abs() < 60;
-          setState(() => it.scale = (_baseScale * d.scale).clamp(0.4, 4.0));
-          widget.onMove(
-              nx / widget.area.width, ny / widget.area.height, overTrash);
-        },
-        onScaleEnd: (_) => widget.onDrop(),
-        child: SizedBox(
-          width: boxW,
-          child: Center(child: w),
+      child: IgnorePointer(
+        ignoring: widget.locked,
+        child: GestureDetector(
+          onScaleStart: (_) => _baseScale = it.scale,
+          onScaleUpdate: (d) {
+            final nx = (it.dx * widget.area.width + d.focalPointDelta.dx)
+                .clamp(0.0, widget.area.width);
+            final ny = (it.dy * widget.area.height + d.focalPointDelta.dy)
+                .clamp(0.0, widget.area.height);
+            final overTrash = ny > widget.area.height - 170 &&
+                (nx - widget.area.width / 2).abs() < 60;
+            setState(() => it.scale = (_baseScale * d.scale).clamp(0.4, 4.0));
+            widget.onMove(
+                nx / widget.area.width, ny / widget.area.height, overTrash);
+          },
+          onScaleEnd: (_) => widget.onDrop(),
+          child: SizedBox(
+            width: boxW,
+            child: Center(child: w),
+          ),
         ),
       ),
     );

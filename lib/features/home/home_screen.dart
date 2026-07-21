@@ -435,6 +435,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       overlays: edit.overlays.isEmpty
                           ? null
                           : jsonEncode(edit.overlays.map((o) => o.toJson()).toList()),
+                      trimStart: edit.trimStart,
+                      trimEnd: edit.trimEnd,
+                      musicSoundId: edit.musicSoundId,
                     ).then((res) {
                       if (!mounted) return null;
                       if (res['success'] == true) {

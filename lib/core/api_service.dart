@@ -186,6 +186,9 @@ class ApiService {
     String? soundId, // "Utiliser ce son" : son réutilisé
     String? duetSourceId, // Duo : vidéo source à composer côte à côte
     String? stitchSourceId, // Stitch : vidéo source à enchaîner
+    double? trimStart, // Découpe : début (secondes) — le serveur coupe la vidéo
+    double? trimEnd, // Découpe : fin (secondes)
+    String? musicSoundId, // Musique ajoutée : son mixé sur la vidéo côté serveur
     void Function(String)? onStatus,
     void Function(int percent)? onProgress,
   }) async {
@@ -242,6 +245,9 @@ class ApiService {
         if (soundId != null && soundId.isNotEmpty) 'sound_id': soundId,
         if (duetSourceId != null && duetSourceId.isNotEmpty) 'duet_source_id': duetSourceId,
         if (stitchSourceId != null && stitchSourceId.isNotEmpty) 'stitch_source_id': stitchSourceId,
+        if (trimStart != null && trimStart > 0) 'trim_start': trimStart.toStringAsFixed(2),
+        if (trimEnd != null && trimEnd > 0) 'trim_end': trimEnd.toStringAsFixed(2),
+        if (musicSoundId != null && musicSoundId.isNotEmpty) 'music_sound_id': musicSoundId,
         'video': await MultipartFile.fromFile(uploadPath, filename: 'video.mp4'),
         if (thumbPath != null)
           'thumbnail': await MultipartFile.fromFile(thumbPath, filename: 'thumb.jpg'),
