@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -410,27 +411,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 _ShareBtn(
                   icon: Icons.message,
-                  label: 'Message',
+                  label: 'SMS',
                   color: Colors.green,
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(Uri.parse(
+                        'sms:?body=${Uri.encodeComponent('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username')}'));
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.facebook,
                   label: 'Facebook',
                   color: const Color(0xFF1877F2),
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(
+                      Uri.parse(
+                          'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent('https://beninplay.app/@$username')}'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.send,
                   label: 'WhatsApp',
                   color: const Color(0xFF25D366),
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    launchUrl(
+                      Uri.parse(
+                          'https://wa.me/?text=${Uri.encodeComponent('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username')}'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _ShareBtn(
                   icon: Icons.more_horiz,
                   label: 'Autre',
                   color: Colors.white54,
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Share.share('Suis-moi sur BeninPlay 🎬 beninplay.app/@$username');
+                  },
                 ),
               ],
             ),

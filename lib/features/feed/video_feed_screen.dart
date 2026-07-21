@@ -1624,7 +1624,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               itemCount: _comments.length,
               itemBuilder: (_, i) {
                 final c = _comments[i];
-                final author = (c['author_name'] ?? c['user_name'] ?? c['phone'] ?? 'Anonyme').toString();
+                // Le nom peut arriver aplati (author_name) ou imbriqué
+                // (user: {username}) selon la version de l'API.
+                final nested = (c['user'] is Map) ? (c['user']['username'] ?? '').toString() : '';
+                final author = (c['author_name'] ??
+                        (nested.isNotEmpty ? nested : null) ??
+                        c['user_name'] ??
+                        'Utilisateur')
+                    .toString();
                 final content = (c['content'] ?? '').toString();
                 return _CommentTile(
                   author: author,
