@@ -77,7 +77,58 @@ class NotificationsSettingsScreen extends StatelessWidget {
           child: Text('Tu choisis ce qui t\'intéresse. Tes préférences sont enregistrées sur ce téléphone.',
               style: TextStyle(color: Colors.white38, fontSize: 12)),
         ),
+        Divider(color: Colors.white12, height: 32),
+        _TestPushButton(),
       ]);
+}
+
+/// Bouton « Tester les notifications » : s'envoie un push et affiche le
+/// diagnostic renvoyé par le serveur (config Azure + jeton de l'appareil).
+class _TestPushButton extends StatefulWidget {
+  const _TestPushButton();
+  @override
+  State<_TestPushButton> createState() => _TestPushButtonState();
+}
+
+class _TestPushButtonState extends State<_TestPushButton> {
+  bool _loading = false;
+
+  Future<void> _run() async {
+    setState(() => _loading = true);
+    final res = await ApiService.testPush();
+    if (!mounted) return;
+    setState(() => _loading = false);
+    final ok = res['success'] == true;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: Text(ok ? '✅ Test réussi' : '⚠️ Diagnostic',
+            style: const TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          (res['message'] ?? 'Résultat inconnu').toString(),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: const Icon(Icons.notifications_active_outlined, color: AppColors.primary),
+      title: const Text('Tester les notifications', style: TextStyle(color: Colors.white)),
+      subtitle: const Text('S\'envoyer un push de vérification', style: TextStyle(color: Colors.white38, fontSize: 12)),
+      trailing: _loading
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
+          : const Icon(Icons.chevron_right, color: Colors.white24),
+      onTap: _loading ? null : _run,
+    );
+  }
 }
 
 // ── Confidentialité ─────────────────────────────────────────────────────────
