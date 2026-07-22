@@ -80,6 +80,27 @@ class VideoFilters {
       0.0, 0.02, 1.04, 0, 8,
       0, 0, 0, 1, 0,
     ],
+    // Néon : couleurs très saturées et contrastées (façon soirée).
+    'neon': [
+      1.5, -0.2, 0.1, 0, -20,
+      -0.1, 1.4, -0.1, 0, -20,
+      0.1, -0.2, 1.6, 0, -10,
+      0, 0, 0, 1, 0,
+    ],
+    // Doré : lumière chaude et cuivrée.
+    'or': [
+      1.2, 0.1, 0, 0, 20,
+      0.05, 1.05, 0, 0, 5,
+      0, 0, 0.75, 0, -5,
+      0, 0, 0, 1, 0,
+    ],
+    // Glacial : ambiance bleutée et froide.
+    'glacial': [
+      0.85, 0, 0.1, 0, 0,
+      0, 0.95, 0.1, 0, 8,
+      0.1, 0.1, 1.3, 0, 20,
+      0, 0, 0, 1, 0,
+    ],
   };
 
   /// Noms affichés à l'utilisateur.
@@ -96,6 +117,9 @@ class VideoFilters {
     'rose': 'Rose',
     'cinema': 'Ciné',
     'beaute': 'Beauté',
+    'neon': 'Néon',
+    'or': 'Doré',
+    'glacial': 'Glacial',
   };
 
   /// Renvoie le [ColorFilter] correspondant, ou `null` si aucun/inconnu.
