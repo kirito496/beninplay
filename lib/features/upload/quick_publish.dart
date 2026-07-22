@@ -12,6 +12,7 @@ class QuickPublish {
     String? soundId,
     String? duetSourceId,
     String? stitchSourceId,
+    List<String> tags = const [], // ex: hashtag d'un défi
     required String label,
   }) async {
     final picker = ImagePicker();
@@ -35,6 +36,7 @@ class QuickPublish {
     final res = await ApiService.uploadVideo(
       filePath: file.path,
       title: title.trim(),
+      tags: tags,
       soundId: soundId,
       duetSourceId: duetSourceId,
       stitchSourceId: stitchSourceId,

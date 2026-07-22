@@ -4,6 +4,7 @@ import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../profile/creator_profile_screen.dart';
 import '../stories/stories_bar.dart';
+import '../challenges/challenge_banner.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -135,6 +136,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Défi à Cagnotte en cours (invisible si aucun) ─────
+          const ChallengeBanner(),
           // ── Stories (24 h) ────────────────────────────────────
           const Text('📸 Stories', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),

@@ -21,6 +21,24 @@ class SoundInfo {
 class SoundService {
   static Future<String?> _token() => ApiService.getToken();
 
+  /// Sons populaires (pour « Ajouter une musique » dans l'éditeur).
+  static Future<List<SoundInfo>> popular() async {
+    try {
+      final token = await _token();
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/sounds'),
+        headers: {if (token != null) 'Authorization': 'Bearer $token'},
+      );
+      final data = jsonDecode(res.body);
+      return ((data['sounds'] as List?) ?? [])
+          .whereType<Map>()
+          .map((e) => SoundInfo.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Le son utilisé par une vidéo (ou null).
   static Future<SoundInfo?> byVideo(String videoId) async {
     try {

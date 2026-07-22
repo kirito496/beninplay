@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 /// Filtres couleur "à la Snapchat/TikTok".
@@ -71,6 +72,14 @@ class VideoFilters {
       0, 0, 1.15, 0, 14,
       0, 0, 0, 1, 0,
     ],
+    // Beauté : éclaircit le teint, réchauffe légèrement et adoucit les rouges
+    // (peau plus lumineuse et flatteuse) — l'utilisateur se sent en confiance.
+    'beaute': [
+      1.06, 0.02, 0.0, 0, 14,
+      0.02, 1.03, 0.0, 0, 10,
+      0.0, 0.02, 1.04, 0, 8,
+      0, 0, 0, 1, 0,
+    ],
   };
 
   /// Noms affichés à l'utilisateur.
@@ -86,6 +95,7 @@ class VideoFilters {
     'dramatique': 'Drama',
     'rose': 'Rose',
     'cinema': 'Ciné',
+    'beaute': 'Beauté',
   };
 
   /// Renvoie le [ColorFilter] correspondant, ou `null` si aucun/inconnu.
@@ -196,6 +206,80 @@ Widget overlayContent(VideoOverlayItem it, double fontSize) {
   return text;
 }
 
+/// Un trait de dessin à main levée : points RELATIFS (0..1) + couleur + épaisseur
+/// (relative à la largeur → même rendu sur tous les écrans).
+class DrawStroke {
+  final List<Offset> points;
+  final int color;
+  final double width; // fraction de la largeur (ex: 0.012)
+  DrawStroke({required this.points, this.color = 0xFFFFFFFF, this.width = 0.012});
+
+  Map<String, dynamic> toJson() => {
+        'c': color,
+        'w': double.parse(width.toStringAsFixed(4)),
+        'p': points
+            .map((o) => [double.parse(o.dx.toStringAsFixed(4)), double.parse(o.dy.toStringAsFixed(4))])
+            .toList(),
+      };
+
+  factory DrawStroke.fromJson(Map<String, dynamic> j) => DrawStroke(
+        color: (j['c'] is int) ? j['c'] : 0xFFFFFFFF,
+        width: (j['w'] ?? 0.012).toDouble(),
+        points: ((j['p'] as List?) ?? [])
+            .map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble()))
+            .toList(),
+      );
+
+  static String encode(List<DrawStroke> strokes) =>
+      jsonEncode(strokes.map((s) => s.toJson()).toList());
+
+  static List<DrawStroke> decode(String raw) {
+    try {
+      final list = jsonDecode(raw);
+      if (list is List) {
+        return list.whereType<Map>().map((e) => DrawStroke.fromJson(Map<String, dynamic>.from(e))).toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
+}
+
+/// Peint des traits (relatifs) sur une zone de taille [size].
+class DrawPainter extends CustomPainter {
+  final List<DrawStroke> strokes;
+  DrawPainter(this.strokes);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final s in strokes) {
+      if (s.points.length < 2) {
+        if (s.points.isNotEmpty) {
+          final p = Paint()..color = Color(s.color);
+          canvas.drawCircle(
+              Offset(s.points.first.dx * size.width, s.points.first.dy * size.height),
+              (s.width * size.width) / 2, p);
+        }
+        continue;
+      }
+      final paint = Paint()
+        ..color = Color(s.color)
+        ..strokeWidth = s.width * size.width
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      final path = Path()
+        ..moveTo(s.points.first.dx * size.width, s.points.first.dy * size.height);
+      for (var i = 1; i < s.points.length; i++) {
+        path.lineTo(s.points[i].dx * size.width, s.points[i].dy * size.height);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant DrawPainter old) => old.strokes != strokes;
+}
+
 /// Dessine les overlays par-dessus une vidéo, en lecture seule (dans le fil).
 /// [size] = taille de la zone vidéo affichée.
 class OverlayLayer extends StatelessWidget {
@@ -209,6 +293,12 @@ class OverlayLayer extends StatelessWidget {
     return IgnorePointer(
       child: Stack(
         children: items.map((it) {
+          // Dessin à main levée : peint sur toute la zone vidéo.
+          if (it.type == 'draw') {
+            return Positioned.fill(
+              child: CustomPaint(painter: DrawPainter(DrawStroke.decode(it.value))),
+            );
+          }
           final fontSize = it.baseSize * it.scale;
           final isEmoji = it.type == 'emoji';
           // Même règle que l'éditeur : texte limité à 82% de la largeur (il
