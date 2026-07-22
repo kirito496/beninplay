@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/sound_service.dart';
 import 'video_effects.dart';
@@ -40,6 +41,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   String _filter = 'aucun';
   final List<VideoOverlayItem> _items = [];
   bool _overTrash = false;
+  bool _muted = false; // son de l'aperçu coupé ?
+  String? _thumbPath; // miniature de la vidéo → aperçu des filtres en rond
 
   // ── Dessin ──
   bool _drawing = false; // mode pinceau actif
@@ -86,13 +89,28 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       _ctrl = c;
       await c.initialize();
       await c.setLooping(true);
-      await c.setVolume(0);
+      await c.setVolume(_muted ? 0 : 1); // aperçu AVEC le son (comme Snapchat)
       await c.play();
       if (mounted) setState(() { _ready = true; _previewFailed = false; });
+      _makeThumb(); // miniature pour l'aperçu des filtres en rond
     } catch (e) {
-      // L'aperçu a échoué : on NE bloque PAS la publication. La vidéo reste
-      // valable, l'utilisateur peut choisir un filtre / du texte et publier.
       if (mounted) setState(() => _previewFailed = true);
+    }
+  }
+
+  // Génère une petite image de la vidéo, réutilisée dans chaque filtre rond.
+  Future<void> _makeThumb() async {
+    try {
+      final p = await VideoThumbnail.thumbnailFile(
+        video: widget.videoFile.path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 160,
+        quality: 60,
+      );
+      if (mounted && p != null) setState(() => _thumbPath = p);
+    } catch (_) {
+      // Pas de miniature : les filtres ronds montreront une pastille de couleur.
+      // Ce n'est PAS bloquant (l'aperçu vidéo reste affiché).
     }
   }
 
@@ -289,7 +307,15 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _round(Icons.close, () => Navigator.pop(context)),
+                  Row(children: [
+                    _round(Icons.close, () => Navigator.pop(context)),
+                    const SizedBox(width: 8),
+                    // Muet / son de l'aperçu.
+                    _round(_muted ? Icons.volume_off : Icons.volume_up, () {
+                      setState(() => _muted = !_muted);
+                      _ctrl?.setVolume(_muted ? 0 : 1);
+                    }),
+                  ]),
                   ElevatedButton.icon(
                     onPressed: _finish, // toujours actif
                     icon: const Icon(Icons.arrow_forward, size: 18),
@@ -483,42 +509,26 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
               ),
             ),
 
-            // ══ BARRE BASSE (toujours visible) : filtres ══
+            // ══ BARRE BASSE : filtres EN ROND (façon Snapchat) ══
+            // Chaque rond montre TA vidéo avec le filtre déjà appliqué.
             Container(
-              height: 78,
+              height: 110,
               width: double.infinity,
               color: Colors.black,
-              alignment: Alignment.center,
-              child: ListView(
+              child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: VideoFilters.presets.keys.map((name) {
-                  final sel = name == _filter;
-                  return GestureDetector(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                itemCount: VideoFilters.presets.length,
+                itemBuilder: (context, i) {
+                  final name = VideoFilters.presets.keys.elementAt(i);
+                  return _FilterCircle(
+                    name: name,
+                    label: VideoFilters.labels[name] ?? name,
+                    thumbPath: _thumbPath,
+                    selected: name == _filter,
                     onTap: () => setState(() => _filter = name),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 16),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? AppColors.primary
-                            : Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Center(
-                        child: Text(
-                          VideoFilters.labels[name] ?? name,
-                          style: TextStyle(
-                            color: sel ? Colors.black : Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
                   );
-                }).toList(),
+                },
               ),
             ),
           ],
@@ -752,6 +762,73 @@ class _TextComposerState extends State<_TextComposer> {
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label, style: TextStyle(color: sel ? Colors.black : Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+}
+
+/// Un filtre présenté « en rond » façon Snapchat : la miniature de la vidéo
+/// avec le filtre déjà appliqué, entourée d'un anneau coloré si sélectionné.
+class _FilterCircle extends StatelessWidget {
+  final String name;
+  final String label;
+  final String? thumbPath;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterCircle({
+    required this.name,
+    required this.label,
+    required this.thumbPath,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Contenu du rond : la miniature filtrée, ou une pastille dégradée si pas
+    // encore de miniature (le rendu reste joli et montre la teinte du filtre).
+    Widget inner = thumbPath != null
+        ? Image.file(File(thumbPath!), width: 60, height: 60, fit: BoxFit.cover)
+        : Container(
+            width: 60, height: 60,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [Color(0xFF7A7A7A), Color(0xFF3A3A3A)]),
+            ),
+          );
+    inner = VideoFilters.apply(name, inner);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 72,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? AppColors.primary : Colors.white24,
+                  width: selected ? 3 : 1.5,
+                ),
+              ),
+              child: ClipOval(child: inner),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? AppColors.primary : Colors.white70,
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
