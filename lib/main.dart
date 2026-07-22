@@ -13,6 +13,11 @@ import 'services/seen_videos.dart';
 import 'services/push_service.dart';
 import 'shared/widgets/bp_logo.dart';
 
+/// Observateur global des routes : permet aux écrans (ex: le fil vidéo) de
+/// savoir quand un AUTRE écran s'ouvre par-dessus eux, pour mettre la vidéo en
+/// pause (sinon le son continue en arrière-plan).
+final RouteObserver<PageRoute<dynamic>> routeObserver = RouteObserver<PageRoute<dynamic>>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
@@ -40,6 +45,7 @@ class BeninPlayApp extends StatelessWidget {
       title: 'BeninPlay',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
+      navigatorObservers: [routeObserver],
       home: const _SplashRouter(),
     );
   }
