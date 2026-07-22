@@ -72,6 +72,14 @@ class VideoFilters {
       0, 0, 1.15, 0, 14,
       0, 0, 0, 1, 0,
     ],
+    // Beauté : éclaircit le teint, réchauffe légèrement et adoucit les rouges
+    // (peau plus lumineuse et flatteuse) — l'utilisateur se sent en confiance.
+    'beaute': [
+      1.06, 0.02, 0.0, 0, 14,
+      0.02, 1.03, 0.0, 0, 10,
+      0.0, 0.02, 1.04, 0, 8,
+      0, 0, 0, 1, 0,
+    ],
   };
 
   /// Noms affichés à l'utilisateur.
@@ -87,6 +95,7 @@ class VideoFilters {
     'dramatique': 'Drama',
     'rose': 'Rose',
     'cinema': 'Ciné',
+    'beaute': 'Beauté',
   };
 
   /// Renvoie le [ColorFilter] correspondant, ou `null` si aucun/inconnu.

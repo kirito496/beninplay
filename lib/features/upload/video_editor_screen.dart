@@ -26,7 +26,8 @@ class EditResult {
 /// déplaçables. Léger — tout se joue à la lecture, rien n'est ré-encodé.
 class VideoEditorScreen extends StatefulWidget {
   final File videoFile;
-  const VideoEditorScreen({super.key, required this.videoFile});
+  final String? initialFilter; // filtre déjà choisi dans la caméra (ex: 'beaute')
+  const VideoEditorScreen({super.key, required this.videoFile, this.initialFilter});
 
   @override
   State<VideoEditorScreen> createState() => _VideoEditorScreenState();
@@ -68,6 +69,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   @override
   void initState() {
     super.initState();
+    // Filtre déjà sélectionné dans la caméra (ex: « beaute ») → on l'applique.
+    final f = widget.initialFilter;
+    if (f != null && VideoFilters.presets.containsKey(f)) _filter = f;
     _init();
   }
 

@@ -13,6 +13,7 @@ import '../discover/discover_screen.dart' show DiscoverScreen;
 import '../messages/messages_screen.dart';
 import '../live/live_screen.dart';
 import '../upload/video_editor_screen.dart';
+import '../upload/camera_screen.dart';
 import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
@@ -63,23 +64,38 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _pickVideo(ImageSource source) async {
     Navigator.pop(context);
     try {
-      final picker = ImagePicker();
-      final video = await picker.pickVideo(
-        source: source,
-        maxDuration: const Duration(minutes: 3),
-      );
-      if (video == null) { return; }
+      String? path;
+      String? initialFilter;
+      if (source == ImageSource.camera) {
+        // Caméra intégrée "façon Snapchat" : aperçu + filtres en direct, beauté,
+        // avant/arrière, flash, minuteur. Renvoie le fichier + le filtre choisi.
+        final cap = await Navigator.push<CameraCaptureResult>(
+          context,
+          MaterialPageRoute(builder: (_) => const CameraScreen()),
+        );
+        if (cap == null) return;
+        path = cap.path;
+        initialFilter = cap.filter;
+      } else {
+        final picker = ImagePicker();
+        final video = await picker.pickVideo(
+          source: source,
+          maxDuration: const Duration(minutes: 3),
+        );
+        if (video == null) return;
+        path = video.path;
+      }
       if (!mounted) return;
       // Étape d'édition "façon Snapchat" (filtres, texte, emojis) avant publication.
       final edit = await Navigator.push<EditResult>(
         context,
         MaterialPageRoute(
-          builder: (_) => VideoEditorScreen(videoFile: File(video.path)),
+          builder: (_) => VideoEditorScreen(videoFile: File(path!), initialFilter: initialFilter),
         ),
       );
       if (edit == null) return; // l'utilisateur a annulé l'édition
       if (mounted) {
-        _showPublishForm(File(video.path), edit);
+        _showPublishForm(File(path), edit);
       }
     } catch (e) {
       if (mounted) {
