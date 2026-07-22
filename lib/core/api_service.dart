@@ -30,6 +30,19 @@ class ApiService {
     } catch (_) { /* ignoré */ }
   }
 
+  /// S'envoie une notification de test et renvoie le diagnostic du serveur.
+  static Future<Map<String, dynamic>> testPush() async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/notifications/test'),
+        headers: await _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(jsonDecode(res.body));
+    } catch (e) {
+      return {'success': false, 'message': 'Impossible de joindre le serveur : $e'};
+    }
+  }
+
   /// Identifiant d'appareil stable (anti-multi-comptes).
   /// Priorité à l'ANDROID_ID natif (survit à la réinstallation) ; sinon UUID stocké.
   static Future<String> _deviceId() async {
