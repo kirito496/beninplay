@@ -14,6 +14,7 @@ import '../messages/messages_screen.dart';
 import '../live/live_screen.dart';
 import '../upload/video_editor_screen.dart';
 import '../upload/camera_screen.dart';
+import '../../services/push_service.dart';
 import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadUnread();
+    PushService.registerToken(); // enregistre l'appareil pour les push (connecté)
   }
 
   Future<void> _loadUnread() async {
