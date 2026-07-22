@@ -18,6 +18,7 @@ import '../../services/video_cache.dart';
 import '../../services/saved_videos.dart';
 import '../../services/seen_videos.dart';
 import '../search/search_screen.dart';
+import '../../main.dart' show routeObserver;
 import '../../services/sound_service.dart';
 import '../sounds/sound_page_screen.dart';
 import '../upload/quick_publish.dart';
@@ -56,7 +57,7 @@ final _fallbackVideo = VideoModel(
   createdAt: DateTime(2024),
 );
 
-class _VideoFeedScreenState extends State<VideoFeedScreen> {
+class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
   late final PageController _pageController;
   int _currentIndex = 0;
   List<VideoModel> _videos = [];
@@ -385,7 +386,34 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // S'abonne à la route qui contient ce fil pour savoir quand un autre écran
+    // s'ouvre par-dessus (didPushNext) ou se referme (didPopNext).
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) routeObserver.subscribe(this, route);
+  }
+
+  // Un autre écran vient de s'ouvrir PAR-DESSUS le fil → on coupe la vidéo
+  // (sinon le son continue en arrière-plan).
+  @override
+  void didPushNext() {
+    _controllers[_currentIndex]?.pause();
+  }
+
+  // On revient sur le fil (l'écran du dessus s'est refermé) → on reprend, si
+  // l'onglet du fil est bien l'onglet actif.
+  @override
+  void didPopNext() {
+    if (widget.isTabActive) {
+      final ctrl = _controllers[_currentIndex];
+      if (ctrl != null && ctrl.value.isInitialized) ctrl.play();
+    }
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     // Retire la protection d'écran en quittant la Zone Dark
     if (widget.isDark) ScreenSecurity.disable();
     _disposeAllControllers();
