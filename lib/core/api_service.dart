@@ -16,6 +16,20 @@ class ApiService {
   static Future<void> saveToken(String token) => _storage.write(key: 'auth_token', value: token);
   static Future<void> clearToken() => _storage.delete(key: 'auth_token');
 
+  /// Enregistre le jeton FCM de l'appareil côté serveur (pour les push).
+  /// Best-effort : n'échoue jamais bruyamment.
+  static Future<void> registerPushToken(String fcmToken) async {
+    try {
+      if (fcmToken.isEmpty) return;
+      if (await getToken() == null) return; // pas connecté → inutile
+      await http.post(
+        Uri.parse('${AppConfig.api}/api/notifications/token'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'token': fcmToken}),
+      );
+    } catch (_) { /* ignoré */ }
+  }
+
   /// Identifiant d'appareil stable (anti-multi-comptes).
   /// Priorité à l'ANDROID_ID natif (survit à la réinstallation) ; sinon UUID stocké.
   static Future<String> _deviceId() async {

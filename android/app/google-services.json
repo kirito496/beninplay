@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "398701138196",
+    "project_id": "beninplay-98654",
+    "storage_bucket": "beninplay-98654.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:398701138196:android:5307b7af7d2e209756b201",
+        "android_client_info": {
+          "package_name": "bj.beninplay.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMUl7Ui3i0_hTaOM9oev5V3iDxcRgfuGE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
