@@ -48,6 +48,18 @@ class VideoCache {
   /// Vidéo à venir : priorité basse (cédée dès qu'une vidéo regardée arrive).
   static Future<File> prefetch(String url) => _request(url, high: false);
 
+  /// Renvoie le fichier SI déjà en cache disque, sinon null. NON bloquant :
+  /// ne lance aucun téléchargement. Sert à démarrer instantanément quand la
+  /// vidéo est déjà là, et à streamer directement sinon (démarrage rapide).
+  static Future<File?> cachedFile(String url) async {
+    try {
+      final info = await _manager.getFileFromCache(url);
+      return info?.file;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<File> _request(String url, {required bool high}) async {
     // Déjà demandée ? On réutilise le même job (et on le remonte si besoin).
     final existing = _pending[url];
