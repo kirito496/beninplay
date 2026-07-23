@@ -71,6 +71,16 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
     'Objets': ['💸', '💰', '🚀', '⭐', '🌟', '💎', '📱', '🎥', '📸', '🔔', '⚡', '☀️'],
   };
 
+  // Pack de stickers « mots » (badges colorés façon Snapchat) : posés comme un
+  // texte stylé (fond coloré) → rendu identique à la lecture.
+  static const List<List<dynamic>> _captionStickers = [
+    ['🔥 HOT', 0xFFFF5252], ['LOL 😂', 0xFF7C4DFF], ['NEW ✨', 0xFF00B248],
+    ['TOP 🏆', 0xFFFB8C00], ['❤️ LOVE', 0xFFC2185B], ['OMG 😱', 0xFF0277BD],
+    ['WOW 🤩', 0xFF00838F], ['VIP 👑', 0xFF6A1B9A], ['🇧🇯 BÉNIN', 0xFF2E7D32],
+    ['BUZZ 🚀', 0xFFD84315], ['MDR 🤣', 0xFF283593], ['SWIPE ⬆️', 0xFF37474F],
+    ['GO 💪', 0xFF00897B], ['COOL 😎', 0xFF5E35B1], ['YES 🙌', 0xFF43A047],
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -174,6 +184,29 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            // Pack de stickers « mots » (badges colorés).
+            const Text('Stickers', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _captionStickers.map((s) {
+                final text = s[0] as String;
+                final bg = s[1] as int;
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _items.add(VideoOverlayItem(
+                        type: 'text', value: text, color: 0xFFFFFFFF, bg: bg, style: 'plain', scale: 1.5)));
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(color: Color(bg), borderRadius: BorderRadius.circular(14)),
+                    child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
             for (final cat in _stickerCats.entries) ...[
               Text(cat.key, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
               const SizedBox(height: 8),
