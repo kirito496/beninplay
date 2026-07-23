@@ -80,9 +80,12 @@ class VideoModel {
 
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',
-    creatorId: json['creator_id'] ?? '',
-    creatorName: json['creator_name'] ?? json['creator_id'] ?? 'Créateur',
-    creatorAvatar: json['creator_avatar'],
+    // creator_id à plat, sinon dans l'objet imbriqué creator{id} (robuste).
+    creatorId: (json['creator_id'] ?? (json['creator'] is Map ? json['creator']['id'] : null) ?? '').toString(),
+    creatorName: json['creator_name']
+        ?? (json['creator'] is Map ? json['creator']['username'] : null)
+        ?? 'Créateur',
+    creatorAvatar: json['creator_avatar'] ?? (json['creator'] is Map ? json['creator']['avatar_url'] : null),
     creatorVerified: json['creator_verified'] == true,
     title: json['title'] ?? '',
     description: json['description'],

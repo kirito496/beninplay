@@ -457,6 +457,9 @@ class ApiService {
   /// Comme [toggleFollow] mais renvoie le détail (pour afficher l'erreur exacte
   /// si l'abonnement échoue — ex: table `follows` absente en base).
   static Future<Map<String, dynamic>> toggleFollowResult(String userId) async {
+    if (userId.trim().isEmpty) {
+      return {'success': false, 'message': 'Créateur inconnu (id manquant)'};
+    }
     try {
       final res = await http.post(
         Uri.parse('${AppConfig.api}/api/users/$userId/follow'),
