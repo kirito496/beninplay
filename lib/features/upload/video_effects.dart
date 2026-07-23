@@ -187,7 +187,7 @@ class VideoOverlayItem {
       );
 
   /// Taille de base (avant [scale]) en pixels logiques.
-  double get baseSize => type == 'emoji' ? 44 : 22;
+  double get baseSize => type == 'emoji' ? 44 : (type == 'image' ? 90 : 22);
 }
 
 /// Rendu d'un overlay (emoji ou texte stylé : couleur, contour, fond).
@@ -196,6 +196,17 @@ class VideoOverlayItem {
 Widget overlayContent(VideoOverlayItem it, double fontSize) {
   if (it.type == 'emoji') {
     return Text(it.value, style: TextStyle(fontSize: fontSize));
+  }
+  // Sticker image (l'utilisateur a ajouté sa propre image) : hébergée, donc
+  // réaffichée à la lecture via son URL.
+  if (it.type == 'image') {
+    return Image.network(
+      it.value,
+      width: fontSize,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) =>
+          Icon(Icons.broken_image, size: fontSize, color: Colors.white38),
+    );
   }
   // Contour (façon Canva) : 4 ombres noires ; sinon ombre portée douce.
   final List<Shadow> shadows = it.style == 'outline'
@@ -327,7 +338,9 @@ class OverlayLayer extends StatelessWidget {
           final isEmoji = it.type == 'emoji';
           // Même règle que l'éditeur : texte limité à 82% de la largeur (il
           // revient à la ligne), boîte centrée sur le point (dx, dy).
-          final boxW = isEmoji ? fontSize * 1.4 : size.width * 0.82;
+          final boxW = isEmoji
+              ? fontSize * 1.4
+              : (it.type == 'image' ? fontSize : size.width * 0.82);
           final child = overlayContent(it, fontSize);
           final left = (it.dx * size.width - boxW / 2)
               .clamp(0.0, (size.width - boxW).clamp(0.0, size.width));

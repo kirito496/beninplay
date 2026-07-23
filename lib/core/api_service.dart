@@ -640,6 +640,23 @@ class ApiService {
     }
   }
 
+  /// Téléverse une image à poser comme sticker sur une vidéo ; renvoie l'URL.
+  static Future<String?> uploadSticker(String filePath) async {
+    try {
+      final req = http.MultipartRequest(
+        'POST', Uri.parse('${AppConfig.api}/api/users/sticker'));
+      final token = await getToken();
+      if (token != null) req.headers['Authorization'] = 'Bearer $token';
+      req.files.add(await http.MultipartFile.fromPath('sticker', filePath));
+      final streamed = await req.send();
+      final res = await http.Response.fromStream(streamed);
+      final data = jsonDecode(res.body);
+      return data['success'] == true ? data['url'] as String? : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>> checkPaymentStatus(String paymentId) async {
     final res = await http.get(
       Uri.parse('${AppConfig.api}/api/payments/status/$paymentId'),

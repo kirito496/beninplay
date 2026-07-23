@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../core/api_service.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/sound_service.dart';
 import 'video_effects.dart';
@@ -152,6 +154,26 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // Raccourcis : clavier système (tous les emojis du téléphone) +
+            // sticker image (ta propre photo, façon Snapchat).
+            Row(
+              children: [
+                Expanded(
+                  child: _sheetAction(Icons.keyboard, 'Clavier', () {
+                    Navigator.pop(context);
+                    _addKeyboardEmoji();
+                  }),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _sheetAction(Icons.image, 'Image / Sticker', () {
+                    Navigator.pop(context);
+                    _addImageSticker();
+                  }),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             for (final cat in _stickerCats.entries) ...[
               Text(cat.key, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
               const SizedBox(height: 8),
@@ -173,6 +195,82 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         ),
       ),
     );
+  }
+
+  // Bouton raccourci en haut de la feuille emoji.
+  Widget _sheetAction(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: AppColors.primary, size: 24),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Saisie d'emojis depuis le CLAVIER SYSTÈME (tous les emojis du téléphone).
+  void _addKeyboardEmoji() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.normalSurface,
+        title: const Text('Emoji du clavier', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.text,
+          style: const TextStyle(color: Colors.white, fontSize: 28),
+          textAlign: TextAlign.center,
+          decoration: const InputDecoration(
+            hintText: '😀 🔥 ❤️ …',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(minimumSize: const Size(0, 42), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            onPressed: () {
+              final v = ctrl.text.trim();
+              Navigator.pop(ctx);
+              if (v.isNotEmpty) setState(() => _items.add(VideoOverlayItem(type: 'emoji', value: v)));
+            },
+            child: const Text('Ajouter'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Ajoute une IMAGE comme sticker (choisie dans la galerie), façon Snapchat.
+  Future<void> _addImageSticker() async {
+    final picker = ImagePicker();
+    final img = await picker.pickImage(source: ImageSource.gallery, maxWidth: 720, imageQuality: 85);
+    if (img == null || !mounted) return;
+    // Petit indicateur pendant l'envoi.
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        duration: Duration(seconds: 20), content: Text('Ajout du sticker…')));
+    final url = await ApiService.uploadSticker(img.path);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (url != null) {
+      setState(() => _items.add(VideoOverlayItem(type: 'image', value: url)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          backgroundColor: AppColors.error, content: Text('Échec de l\'ajout du sticker')));
+    }
   }
 
   void _finish() {
@@ -598,7 +696,9 @@ class _DraggableItemState extends State<_DraggableItem> {
     final fontSize = it.baseSize * it.scale;
     // Largeur max d'un texte = 82% de l'écran → il revient à la ligne au lieu
     // d'être coupé à droite. Cette même règle est utilisée à la lecture.
-    final boxW = it.type == 'emoji' ? fontSize * 1.4 : widget.area.width * 0.82;
+    final boxW = it.type == 'emoji'
+        ? fontSize * 1.4
+        : (it.type == 'image' ? fontSize : widget.area.width * 0.82);
     final w = overlayContent(it, fontSize);
     // Ancré par son CENTRE (dx, dy) : la boîte de largeur fixe est centrée sur
     // le point → position identique à la lecture dans le fil.
