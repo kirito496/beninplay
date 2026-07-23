@@ -170,19 +170,34 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware, Widg
       final isCurrent = index == _currentIndex;
       // Choix HD / 480p selon la vitesse de connexion mesurée.
       final url = video.cacheUrlFor(fast: VideoCache.fastConnection);
-      final file = isCurrent
-          ? await VideoCache.getForPlayback(url)
-          : await VideoCache.prefetch(url);
 
-      // Zappée pendant le téléchargement (et trop loin) → on abandonne.
-      // Le fichier reste en cache pour un futur affichage (rien de perdu).
-      if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
-
-      // 2) Lecture depuis le FICHIER LOCAL (aucun réseau ensuite).
-      ctrl = VideoPlayerController.file(
-        file,
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-      );
+      if (isCurrent) {
+        // DÉMARRAGE RAPIDE : si la vidéo est DÉJÀ en cache, on la lit depuis le
+        // disque (instantané). Sinon on la LIT EN STREAMING (lecture progressive
+        // qui démarre dès les premiers octets) au lieu d'attendre le
+        // téléchargement complet → plus d'attente sur connexion lente.
+        final cached = await VideoCache.cachedFile(url);
+        if (cached != null) {
+          ctrl = VideoPlayerController.file(
+            cached,
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+          );
+        } else {
+          ctrl = VideoPlayerController.networkUrl(
+            Uri.parse(url),
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+          );
+        }
+      } else {
+        // Vidéo à venir : on la télécharge en entier sur le disque (priorité
+        // basse) pour qu'elle démarre INSTANTANÉMENT quand on y arrivera.
+        final file = await VideoCache.prefetch(url);
+        if (_stale(g, index) && (index - _currentIndex).abs() > 1) return;
+        ctrl = VideoPlayerController.file(
+          file,
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+        );
+      }
     } catch (_) {
       // Échec du cache (hors-ligne, disque plein…) → repli : lecture réseau
       // directe pour ne jamais bloquer la lecture.
@@ -874,11 +889,17 @@ class _VideoPageState extends State<_VideoPage> {
     if (widget.video.id == 'bee_fallback') return;
     final was = _isFollowing;
     setState(() => _isFollowing = !was);
-    try {
-      final now = await ApiService.toggleFollow(widget.video.creatorId);
-      if (mounted) setState(() => _isFollowing = now);
-    } catch (_) {
-      if (mounted) setState(() => _isFollowing = was);
+    final r = await ApiService.toggleFollowResult(widget.video.creatorId);
+    if (!mounted) return;
+    if (r['success'] == true) {
+      setState(() => _isFollowing = r['following'] == true);
+    } else {
+      // Échec réel → on revient en arrière ET on montre la cause exacte.
+      setState(() => _isFollowing = was);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.error,
+        content: Text('Abonnement impossible : ${r['message'] ?? 'erreur inconnue'}'),
+      ));
     }
   }
 
