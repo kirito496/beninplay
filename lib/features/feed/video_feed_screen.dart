@@ -57,7 +57,8 @@ final _fallbackVideo = VideoModel(
   createdAt: DateTime(2024),
 );
 
-class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
+class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware, WidgetsBindingObserver {
+  bool _routeIsTop = true; // le fil est-il l'écran du dessus ?
   late final PageController _pageController;
   int _currentIndex = 0;
   List<VideoModel> _videos = [];
@@ -79,9 +80,25 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
     super.initState();
     _lastRefreshKey = widget.refreshKey;
     _pageController = PageController();
+    WidgetsBinding.instance.addObserver(this); // pause sur appel/notif/arrière-plan
     // Zone Dark : bloque captures d'écran + enregistrement d'écran
     if (widget.isDark) ScreenSecurity.enable();
     _loadVideos();
+  }
+
+  // Appel entrant, volet de notifications, bascule d'appli, écran verrouillé…
+  // → tout ce qui interrompt met la vidéo en pause ; on ne reprend qu'au retour
+  // réel dans l'appli, si le fil est bien l'écran actif.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (widget.isTabActive && _routeIsTop) {
+        final ctrl = _controllers[_currentIndex];
+        if (ctrl != null && ctrl.value.isInitialized) ctrl.play();
+      }
+    } else {
+      _controllers[_currentIndex]?.pause();
+    }
   }
 
   @override
@@ -398,6 +415,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
   // (sinon le son continue en arrière-plan).
   @override
   void didPushNext() {
+    _routeIsTop = false;
     _controllers[_currentIndex]?.pause();
   }
 
@@ -405,6 +423,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
   // l'onglet du fil est bien l'onglet actif.
   @override
   void didPopNext() {
+    _routeIsTop = true;
     if (widget.isTabActive) {
       final ctrl = _controllers[_currentIndex];
       if (ctrl != null && ctrl.value.isInitialized) ctrl.play();
@@ -413,6 +432,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     routeObserver.unsubscribe(this);
     // Retire la protection d'écran en quittant la Zone Dark
     if (widget.isDark) ScreenSecurity.disable();
