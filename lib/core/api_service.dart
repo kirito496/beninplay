@@ -454,6 +454,20 @@ class ApiService {
     return data['following'] == true;
   }
 
+  /// Comme [toggleFollow] mais renvoie le détail (pour afficher l'erreur exacte
+  /// si l'abonnement échoue — ex: table `follows` absente en base).
+  static Future<Map<String, dynamic>> toggleFollowResult(String userId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/users/$userId/follow'),
+        headers: await _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(jsonDecode(res.body));
+    } catch (e) {
+      return {'success': false, 'message': 'Réseau : $e'};
+    }
+  }
+
   /// Vidéos d'un créateur
   static Future<List<Map<String, dynamic>>> getCreatorVideos(String userId) async {
     final res = await http.get(
@@ -590,6 +604,7 @@ class ApiService {
     int? birthYear,
     String? fullName,
     String? birthDate, // AAAA-MM-JJ
+    String? avatarUrl,
   }) async {
     final res = await http.put(
       Uri.parse('${AppConfig.api}/api/auth/profile'),
@@ -602,9 +617,27 @@ class ApiService {
         if (birthYear != null) 'birthYear': birthYear,
         if (fullName != null) 'fullName': fullName,
         if (birthDate != null) 'birthDate': birthDate,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
       }),
     );
     return jsonDecode(res.body);
+  }
+
+  /// Envoie une nouvelle photo de profil ; renvoie l'URL publique (ou null).
+  static Future<String?> uploadAvatar(String filePath) async {
+    try {
+      final req = http.MultipartRequest(
+        'POST', Uri.parse('${AppConfig.api}/api/users/avatar'));
+      final token = await getToken();
+      if (token != null) req.headers['Authorization'] = 'Bearer $token';
+      req.files.add(await http.MultipartFile.fromPath('avatar', filePath));
+      final streamed = await req.send();
+      final res = await http.Response.fromStream(streamed);
+      final data = jsonDecode(res.body);
+      return data['success'] == true ? data['avatar_url'] as String? : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<Map<String, dynamic>> checkPaymentStatus(String paymentId) async {

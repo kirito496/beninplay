@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -37,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _displayName = '?';
   String username = '';
   String _bio = '';
+  String _avatarUrl = '';
   String statsVideos = '0';
   String statsFollowers = '0';
   String statsFollowing = '0';
@@ -186,8 +188,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final user = data['user'] as Map<String, dynamic>? ?? {};
       setState(() {
         username = user['username']?.toString() ?? '';
-        _displayName = user['display_name']?.toString() ?? user['username']?.toString() ?? 'Moi';
+        _displayName = user['display_name']?.toString()
+            ?? user['full_name']?.toString()
+            ?? user['username']?.toString() ?? 'Moi';
         _bio = user['bio']?.toString() ?? '';
+        _avatarUrl = user['avatar_url']?.toString() ?? '';
         _isCreator = user['is_creator'] == true;
         _myRegion = user['region']?.toString();
         _myGender = user['gender']?.toString();
@@ -224,6 +229,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _editProfile() {
     final nameCtrl = TextEditingController(text: _displayName);
     final bioCtrl = TextEditingController(text: _bio);
+    String localAvatar = _avatarUrl;
+    bool uploading = false;
+    bool saving = false;
 
     showModalBottomSheet(
       context: context,
@@ -232,7 +240,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom + 24,
           top: 24,
@@ -260,33 +269,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
             Center(
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 44,
-                    backgroundColor: AppColors.primary,
-                    child: Text(
-                      _displayName.isNotEmpty ? _displayName[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
+              child: GestureDetector(
+                onTap: uploading ? null : () async {
+                  final picker = ImagePicker();
+                  final img = await picker.pickImage(
+                      source: ImageSource.gallery, maxWidth: 720, imageQuality: 80);
+                  if (img == null) return;
+                  setSheet(() => uploading = true);
+                  final url = await ApiService.uploadAvatar(img.path);
+                  if (url != null) {
+                    localAvatar = url;
+                    if (mounted) setState(() => _avatarUrl = url); // maj immédiate
+                  }
+                  setSheet(() => uploading = false);
+                  if (url == null && ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                        backgroundColor: AppColors.error,
+                        content: Text('Échec de l\'envoi de la photo')));
+                  }
+                },
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 44,
+                      backgroundColor: AppColors.primary,
+                      backgroundImage: localAvatar.isNotEmpty ? NetworkImage(localAvatar) : null,
+                      child: localAvatar.isNotEmpty
+                          ? null
+                          : Text(
+                              _displayName.isNotEmpty ? _displayName[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                  color: Colors.black, fontSize: 36, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                    if (uploading)
+                      const Positioned.fill(
+                        child: CircleAvatar(
+                          radius: 44,
+                          backgroundColor: Colors.black45,
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt, color: Colors.black, size: 16),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.camera_alt, color: Colors.black, size: 16),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -322,24 +359,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _displayName = nameCtrl.text.trim().isEmpty ? _displayName : nameCtrl.text.trim();
-                  _bio = bioCtrl.text.trim().isEmpty ? _bio : bioCtrl.text.trim();
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Profil mis à jour ✓'),
-                    backgroundColor: AppColors.primary,
-                  ),
+              onPressed: saving ? null : () async {
+                final newName = nameCtrl.text.trim();
+                final newBio = bioCtrl.text.trim();
+                setSheet(() => saving = true);
+                // Sauvegarde RÉELLE côté serveur (la photo est déjà enregistrée
+                // au moment du choix). fullName = nom affiché.
+                final res = await ApiService.updateProfile(
+                  fullName: newName.isEmpty ? null : newName,
+                  bio: newBio.isEmpty ? null : newBio,
                 );
+                final ok = res['success'] != false; // l'API renvoie l'user maj
+                if (!ctx.mounted) return;
+                if (ok) {
+                  if (mounted) setState(() {
+                    if (newName.isNotEmpty) _displayName = newName;
+                    _bio = newBio;
+                  });
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Profil mis à jour ✓'),
+                      backgroundColor: AppColors.primary));
+                } else {
+                  setSheet(() => saving = false);
+                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      backgroundColor: AppColors.error,
+                      content: Text('Échec : ${res['message'] ?? 'réessaie'}')));
+                }
               },
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-              child: const Text('Enregistrer'),
+              child: saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                  : const Text('Enregistrer'),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1097,14 +1152,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: CircleAvatar(
                             radius: 44,
                             backgroundColor: AppColors.primary,
-                            child: Text(
-                              _displayName.isNotEmpty ? _displayName[0].toUpperCase() : '?',
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 36,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                            backgroundImage: _avatarUrl.isNotEmpty ? NetworkImage(_avatarUrl) : null,
+                            child: _avatarUrl.isNotEmpty
+                                ? null
+                                : Text(
+                                    _displayName.isNotEmpty ? _displayName[0].toUpperCase() : '?',
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                           ),
                           Positioned(

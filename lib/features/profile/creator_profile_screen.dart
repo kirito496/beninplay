@@ -57,11 +57,17 @@ class _CreatorProfileScreenState extends State<CreatorProfileScreen> {
   Future<void> _toggleFollow() async {
     final was = _following;
     setState(() => _following = !was);
-    try {
-      final now = await ApiService.toggleFollow(widget.creatorId);
-      if (mounted) setState(() => _following = now);
-    } catch (_) {
-      if (mounted) setState(() => _following = was);
+    final r = await ApiService.toggleFollowResult(widget.creatorId);
+    if (!mounted) return;
+    if (r['success'] == true) {
+      setState(() => _following = r['following'] == true);
+    } else {
+      // Échec réel : on revient en arrière ET on montre la cause exacte.
+      setState(() => _following = was);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.error,
+        content: Text('Abonnement impossible : ${r['message'] ?? 'erreur inconnue'}'),
+      ));
     }
   }
 
