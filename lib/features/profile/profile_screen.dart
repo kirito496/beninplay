@@ -9,6 +9,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'avatar_creator_screen.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -326,7 +327,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton.icon(
+                onPressed: () async {
+                  final url = await Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(builder: (_) => AvatarCreatorScreen(initial: _displayName)),
+                  );
+                  if (url != null) {
+                    localAvatar = url;
+                    if (mounted) setState(() => _avatarUrl = url);
+                    setSheet(() {});
+                  }
+                },
+                icon: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 18),
+                label: const Text('Créer un avatar', style: TextStyle(color: AppColors.primary)),
+              ),
+            ),
+            const SizedBox(height: 6),
             TextField(
               controller: nameCtrl,
               style: const TextStyle(color: Colors.white),
