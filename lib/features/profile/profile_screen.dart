@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'avatar_creator_screen.dart';
+import 'interests_screen.dart';
 import '../../core/api_service.dart';
 import '../../core/app_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -897,6 +898,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
+            _SettingItem(icon: Icons.auto_awesome, label: 'Tes centres d\'intérêt',
+                onTap: () { Navigator.pop(context); InterestsScreen.open(context); }),
             _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications',
                 onTap: () { Navigator.pop(context); NotificationsSettingsScreen.open(context); }),
             _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité',

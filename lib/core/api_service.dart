@@ -640,6 +640,19 @@ class ApiService {
     }
   }
 
+  /// « Tes centres d'intérêt » : thèmes + créateurs appris par l'algo (via likes).
+  static Future<Map<String, dynamic>> getInterests() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${AppConfig.api}/api/users/interests'),
+        headers: await _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(jsonDecode(res.body));
+    } catch (_) {
+      return {'success': false, 'interests': [], 'creators': [], 'totalLikes': 0};
+    }
+  }
+
   /// Téléverse une image à poser comme sticker sur une vidéo ; renvoie l'URL.
   static Future<String?> uploadSticker(String filePath) async {
     try {
