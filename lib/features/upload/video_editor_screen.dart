@@ -512,12 +512,12 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
             // ══ BARRE BASSE : filtres EN ROND (façon Snapchat) ══
             // Chaque rond montre TA vidéo avec le filtre déjà appliqué.
             Container(
-              height: 110,
+              height: 104,
               width: double.infinity,
               color: Colors.black,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 itemCount: VideoFilters.presets.length,
                 itemBuilder: (context, i) {
                   final name = VideoFilters.presets.keys.elementAt(i);
@@ -788,9 +788,9 @@ class _FilterCircle extends StatelessWidget {
     // Contenu du rond : la miniature filtrée, ou une pastille dégradée si pas
     // encore de miniature (le rendu reste joli et montre la teinte du filtre).
     Widget inner = thumbPath != null
-        ? Image.file(File(thumbPath!), width: 60, height: 60, fit: BoxFit.cover)
+        ? Image.file(File(thumbPath!), width: 54, height: 54, fit: BoxFit.cover)
         : Container(
-            width: 60, height: 60,
+            width: 54, height: 54,
             decoration: const BoxDecoration(
               gradient: LinearGradient(colors: [Color(0xFF7A7A7A), Color(0xFF3A3A3A)]),
             ),
