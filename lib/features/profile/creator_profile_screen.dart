@@ -54,16 +54,33 @@ class _CreatorProfileScreenState extends State<CreatorProfileScreen> {
     }
   }
 
+  void _bumpFollowers(int delta) {
+    final cur = (_profile['followers_count'] as num?)?.toInt() ?? 0;
+    _profile['followers_count'] = (cur + delta).clamp(0, 1 << 31);
+  }
+
   Future<void> _toggleFollow() async {
     final was = _following;
-    setState(() => _following = !was);
+    // Mise à jour OPTIMISTE : bouton + compteur d'abonnés tout de suite.
+    setState(() {
+      _following = !was;
+      _bumpFollowers(was ? -1 : 1);
+    });
     final r = await ApiService.toggleFollowResult(widget.creatorId);
     if (!mounted) return;
     if (r['success'] == true) {
-      setState(() => _following = r['following'] == true);
+      final now = r['following'] == true;
+      // Recale l'état/compteur sur la réponse réelle du serveur.
+      setState(() {
+        if (now != _following) _bumpFollowers(now ? 1 : -1);
+        _following = now;
+      });
     } else {
       // Échec réel : on revient en arrière ET on montre la cause exacte.
-      setState(() => _following = was);
+      setState(() {
+        _following = was;
+        _bumpFollowers(was ? 1 : -1); // annule le +/- optimiste
+      });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.error,
         content: Text('Abonnement impossible : ${r['message'] ?? 'erreur inconnue'}'),

@@ -29,6 +29,17 @@ class _HomeScreenState extends State<HomeScreen> {
   int _feedRefreshKey = 0;
   int _unreadMsgs = 0; // badge sur l'onglet Messages
 
+  // Catégories prédéfinies proposées à la publication : [libellé, tag propre].
+  // Elles alimentent l'algo (qui classe les vidéos par tag) et l'écran
+  // « Tes centres d'intérêt ».
+  static const List<List<String>> _publishCategories = [
+    ['😂 Humour', 'humour'], ['💃 Danse', 'danse'], ['🎵 Musique', 'musique'],
+    ['⚽ Sport', 'sport'], ['🍲 Cuisine', 'cuisine'], ['👗 Mode', 'mode'],
+    ['💄 Beauté', 'beaute'], ['📚 Éducation', 'education'], ['📰 Actu', 'actu'],
+    ['🔥 Défi', 'defi'], ['🎥 Vlog', 'vlog'], ['🎮 Gaming', 'gaming'],
+    ['🇧🇯 Bénin', 'benin'],
+  ];
+
   List<Widget> get _screens => [
     VideoFeedScreen(isDark: false, isTabActive: _currentIndex == 0, refreshKey: _feedRefreshKey, onOpenLive: _openLives, onOpenDiscover: _openDiscover),
     const MessagesScreen(),
@@ -374,6 +385,37 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.all(Radius.circular(12)),
                     ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                // ── Catégories prédéfinies (aident l'algo à classer la vidéo) ──
+                const Text('Catégorie', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6, runSpacing: 6,
+                  children: _publishCategories.map((c) {
+                    final tag = '#${c[1]}';
+                    final sel = tags.contains(tag);
+                    return GestureDetector(
+                      onTap: () => setSt(() {
+                        if (sel) {
+                          tags.remove(tag);
+                        } else if (tags.length < 10) {
+                          tags.add(tag);
+                        }
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : Colors.white10,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: sel ? AppColors.primary : Colors.white24),
+                        ),
+                        child: Text(c[0], style: TextStyle(
+                            color: sel ? Colors.black : Colors.white,
+                            fontSize: 12, fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 12),
                 if (tags.isNotEmpty)
