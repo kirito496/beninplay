@@ -753,6 +753,11 @@ class _VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<_VideoPage> {
+  // Cache d'abonnement partagé entre TOUTES les vidéos du fil (par créateur) :
+  // suivre un créateur sur une vidéo se reflète aussitôt sur ses autres vidéos
+  // et survit à un rafraîchissement du fil pendant la session.
+  static final Map<String, bool> _followCache = {};
+
   bool _isLiked = false;
   bool _likePop = false; // animation "pop" du cœur au like
   bool _savePop = false; // animation "pop" du bouton Enregistrer
@@ -774,6 +779,8 @@ class _VideoPageState extends State<_VideoPage> {
     // Reprend l'état mémorisé s'il existe, sinon les données API
     _likes = widget.likeCountOverride ?? widget.video.likes;
     _isLiked = widget.likedOverride ?? widget.video.isLiked;
+    // État d'abonnement : mémorisé pour la session (voir _followCache) sinon API.
+    _isFollowing = _followCache[widget.video.creatorId] ?? widget.video.isFollowing;
     _ctrl?.addListener(_onControllerUpdate);
   }
 
@@ -889,12 +896,16 @@ class _VideoPageState extends State<_VideoPage> {
     if (widget.video.id == 'bee_fallback') return;
     final was = _isFollowing;
     setState(() => _isFollowing = !was);
+    _followCache[widget.video.creatorId] = !was; // reflète sur ses autres vidéos
     final r = await ApiService.toggleFollowResult(widget.video.creatorId);
     if (!mounted) return;
     if (r['success'] == true) {
-      setState(() => _isFollowing = r['following'] == true);
+      final now = r['following'] == true;
+      _followCache[widget.video.creatorId] = now;
+      setState(() => _isFollowing = now);
     } else {
       // Échec réel → on revient en arrière ET on montre la cause exacte.
+      _followCache[widget.video.creatorId] = was;
       setState(() => _isFollowing = was);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.error,
