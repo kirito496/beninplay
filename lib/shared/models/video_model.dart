@@ -20,6 +20,7 @@ class VideoModel {
   final int comments;
   final int views;
   final bool isLiked;
+  final bool isFollowing; // l'utilisateur suit-il déjà ce créateur ?
   final bool isBoosted;
   final double price; // 0 = gratuit
   final bool isLocked; // vidéo payante non encore achetée par le spectateur
@@ -43,6 +44,7 @@ class VideoModel {
     this.comments = 0,
     this.views = 0,
     this.isLiked = false,
+    this.isFollowing = false,
     this.isBoosted = false,
     this.price = 0,
     this.isLocked = false,
@@ -97,6 +99,7 @@ class VideoModel {
     comments: json['comments_count'] ?? json['comments'] ?? 0,
     views: json['views'] ?? 0,
     isLiked: json['is_liked'] ?? false,
+    isFollowing: json['is_following'] ?? false,
     isBoosted: json['is_boosted'] ?? false,
     price: (json['price'] ?? 0).toDouble(),
     isLocked: json['is_locked'] == true,
