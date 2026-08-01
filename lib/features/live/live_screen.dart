@@ -300,7 +300,7 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
       await engine.enableExtension(
         provider: 'agora_video_filters_clear_vision',
         extension: 'clear_vision',
-        enabled: true,
+        enable: true,
       );
     } catch (_) { /* extension absente sur l'appareil : pas bloquant */ }
     try {
