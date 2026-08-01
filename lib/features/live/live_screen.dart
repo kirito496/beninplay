@@ -293,10 +293,22 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
   Future<void> _applyBeauty([RtcEngine? e]) async {
     final engine = e ?? _engine;
     if (engine == null) return;
+    // ÉTAPE CLÉ : activer l'extension « clear vision » d'Agora. SANS elle, la
+    // beauté et l'amélioration des couleurs ne s'appliquent PAS au flux vu par
+    // les spectateurs. Idempotent (peut être rappelé sans souci).
+    try {
+      await engine.enableExtension(
+        provider: 'agora_video_filters_clear_vision',
+        extension: 'clear_vision',
+        enabled: true,
+      );
+    } catch (_) { /* extension absente sur l'appareil : pas bloquant */ }
     try {
       if (_beautyLevel == 0) {
         await engine.setBeautyEffectOptions(
             enabled: false, options: const BeautyOptions());
+        await engine.setColorEnhanceOptions(
+            enabled: false, options: const ColorEnhanceOptions());
         return;
       }
       final soft = _beautyLevel == 1;
@@ -309,6 +321,12 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
           rednessLevel: soft ? 0.1 : 0.2, // bonne mine
           sharpnessLevel: 0.3,
         ),
+      );
+      // Couleurs plus vives et vivantes, avec protection des tons de peau —
+      // rendu « pro » visible par tous les spectateurs.
+      await engine.setColorEnhanceOptions(
+        enabled: true,
+        options: const ColorEnhanceOptions(strengthLevel: 0.5, skinProtectLevel: 0.8),
       );
     } catch (_) { /* appareil non supporté : pas bloquant */ }
   }
