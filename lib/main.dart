@@ -11,7 +11,6 @@ import 'features/home/home_screen.dart';
 import 'services/saved_videos.dart';
 import 'services/seen_videos.dart';
 import 'services/push_service.dart';
-import 'services/background_prefetch.dart';
 import 'shared/widgets/bp_logo.dart';
 
 /// Observateur global des routes : permet aux écrans (ex: le fil vidéo) de
@@ -29,10 +28,6 @@ void main() async {
   await SeenVideos.init(); // précharge les vidéos déjà vues (fil sans répétition)
   await AppPrefs.init(); // réglages (notifs, confidentialité, langue, verrou)
   await PushService.init(); // notifications push (best-effort, n'échoue jamais)
-  // Pré-chargement de vidéos en arrière-plan (si activé) — best-effort, Android.
-  if (AppPrefs.backgroundPrefetch) {
-    await BackgroundPrefetch.enable();
-  }
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
