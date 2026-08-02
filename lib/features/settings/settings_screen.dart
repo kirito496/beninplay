@@ -5,7 +5,6 @@ import '../../core/app_config.dart';
 import '../../core/app_prefs.dart';
 import '../../core/biometric.dart';
 import '../../core/constants/app_colors.dart';
-import '../../services/background_prefetch.dart';
 import '../auth/login_screen.dart';
 
 // Version affichée (à incrémenter à chaque release).
@@ -322,50 +321,3 @@ class AboutScreen extends StatelessWidget {
   }
 }
 
-// ── Données & lecture ────────────────────────────────────────────────────────
-class DataSettingsScreen extends StatefulWidget {
-  const DataSettingsScreen({super.key});
-  static void open(BuildContext c) =>
-      Navigator.push(c, MaterialPageRoute(builder: (_) => const DataSettingsScreen()));
-
-  @override
-  State<DataSettingsScreen> createState() => _DataSettingsScreenState();
-}
-
-class _DataSettingsScreenState extends State<DataSettingsScreen> {
-  bool _bg = AppPrefs.backgroundPrefetch;
-
-  Future<void> _toggleBg(bool v) async {
-    setState(() => _bg = v);
-    await AppPrefs.setBackgroundPrefetch(v);
-    if (v) {
-      await BackgroundPrefetch.enable();
-    } else {
-      await BackgroundPrefetch.disable();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => _settingsScaffold('Données & lecture', [
-        SwitchListTile(
-          value: _bg,
-          activeColor: AppColors.primary,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-          secondary: const Icon(Icons.download_for_offline_outlined, color: Colors.white70),
-          title: const Text('Pré-charger des vidéos en arrière-plan',
-              style: TextStyle(color: Colors.white)),
-          subtitle: const Text(
-              'Télécharge quelques vidéos même quand l\'appli est fermée (Wi-Fi ou données mobiles) '
-              'pour un démarrage instantané. Fonctionne surtout sur Android, quand le système l\'autorise.',
-              style: TextStyle(color: Colors.white38, fontSize: 12)),
-          onChanged: _toggleBg,
-        ),
-        const Padding(
-          padding: EdgeInsets.only(top: 16),
-          child: Text(
-              'Astuce : coupe cette option si tu veux économiser tes données mobiles. '
-              'Le pré-chargement pendant que tu regardes le fil reste toujours actif.',
-              style: TextStyle(color: Colors.white38, fontSize: 12)),
-        ),
-      ]);
-}
