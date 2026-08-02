@@ -900,6 +900,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 20),
             _SettingItem(icon: Icons.auto_awesome, label: 'Tes centres d\'intérêt',
                 onTap: () { Navigator.pop(context); InterestsScreen.open(context); }),
+            _SettingItem(icon: Icons.download_for_offline_outlined, label: 'Données & lecture',
+                onTap: () { Navigator.pop(context); DataSettingsScreen.open(context); }),
             _SettingItem(icon: Icons.notifications_outlined, label: 'Notifications',
                 onTap: () { Navigator.pop(context); NotificationsSettingsScreen.open(context); }),
             _SettingItem(icon: Icons.lock_outline, label: 'Confidentialité',
