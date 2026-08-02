@@ -60,6 +60,16 @@ class VideoCache {
     }
   }
 
+  /// Télécharge la vidéo dans le cache SI elle n'y est pas déjà. Simple et
+  /// autonome (pas de file de priorité) → utilisable depuis une tâche de fond.
+  static Future<void> ensureCached(String url) async {
+    try {
+      final existing = await _manager.getFileFromCache(url);
+      if (existing != null) return; // déjà là
+      await _manager.downloadFile(url);
+    } catch (_) { /* réseau/disque : best-effort */ }
+  }
+
   static Future<File> _request(String url, {required bool high}) async {
     // Déjà demandée ? On réutilise le même job (et on le remonte si besoin).
     final existing = _pending[url];

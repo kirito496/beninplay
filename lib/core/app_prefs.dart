@@ -37,4 +37,9 @@ class AppPrefs {
   // ── Sécurité ──
   static bool get biometricLock => getBool('biometricLock', false);
   static Future<void> setBiometricLock(bool v) => setBool('biometricLock', v);
+
+  // Pré-chargement de vidéos en arrière-plan (appli fermée). Activé par défaut,
+  // données mobiles comprises.
+  static bool get backgroundPrefetch => getBool('backgroundPrefetch', true);
+  static Future<void> setBackgroundPrefetch(bool v) => setBool('backgroundPrefetch', v);
 }
