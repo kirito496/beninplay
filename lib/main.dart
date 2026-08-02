@@ -7,6 +7,7 @@ import 'core/app_prefs.dart';
 import 'core/biometric.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_screen.dart';
+import 'features/onboarding/welcome_screen.dart';
 import 'features/home/home_screen.dart';
 import 'services/saved_videos.dart';
 import 'services/seen_videos.dart';
@@ -79,9 +80,13 @@ class _SplashRouterState extends State<_SplashRouter> {
         _goHome();
       }
     } else {
+      // Première ouverture → écran d'accueil (avantages + invitation), une seule
+      // fois ; sinon directement la connexion.
+      final firstTime = !AppPrefs.getBool('welcome_seen', false);
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+          builder: (_) => firstTime ? const WelcomeScreen() : const LoginScreen()),
       );
     }
   }
