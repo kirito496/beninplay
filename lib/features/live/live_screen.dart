@@ -181,7 +181,8 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
 
   final ChatService _chat = ChatService();
   StreamSubscription? _chatSub;
-  final List<String> _comments = [];
+  final List<_LiveMsg> _comments = [];
+  final Set<String> _mutedUsers = {}; // pseudos masqués localement
   final ScrollController _commentsScroll = ScrollController();
   String? _flyingGift;
 
@@ -192,13 +193,15 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     _chatSub = _chat.incoming.listen((d) {
       if (!mounted || d['liveId'] != _liveId) return;
       final type = d['type'];
+      final fromMap = d['from'] is Map ? d['from'] as Map : const {};
+      final user = fromMap['username']?.toString() ?? '?';
+      final uid = fromMap['id']?.toString();
       if (type == 'live_comment') {
-        final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
-        _pushComment('@$from: ${d['content']}');
+        if (_mutedUsers.contains(user)) return; // commentaire d'un pseudo masqué
+        _pushComment(_LiveMsg(text: '${d['content']}', username: user, userId: uid));
       } else if (type == 'gift') {
         final g = d['gift'] is Map ? d['gift'] : {};
-        final from = (d['from'] is Map ? d['from']['username'] : null)?.toString() ?? '?';
-        _pushComment('🎁 @$from a envoyé ${g['name']} ${g['emoji']}');
+        _pushComment(_LiveMsg(text: '🎁 @$user a envoyé ${g['name']} ${g['emoji']}', system: true));
         setState(() => _flyingGift = (g['emoji'] ?? '🎁').toString());
         Future.delayed(const Duration(milliseconds: 1800), () {
           if (mounted) setState(() => _flyingGift = null);
@@ -207,14 +210,62 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
     });
   }
 
-  void _pushComment(String line) {
-    setState(() => _comments.add(line));
+  void _pushComment(_LiveMsg m) {
+    setState(() => _comments.add(m));
     Future.delayed(const Duration(milliseconds: 80), () {
       if (_commentsScroll.hasClients) {
         _commentsScroll.animateTo(_commentsScroll.position.maxScrollExtent,
             duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
       }
     });
+  }
+
+  // Menu de modération sur un commentaire (masquer / signaler / bloquer).
+  void _commentActions(_LiveMsg m) {
+    if (m.system || m.username == null) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.normalSurface,
+      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.all(14),
+            child: Text('@${m.username}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+        ListTile(
+          leading: const Icon(Icons.visibility_off, color: Colors.white70),
+          title: const Text('Masquer ses commentaires', style: TextStyle(color: Colors.white)),
+          onTap: () {
+            setState(() { _mutedUsers.add(m.username!); _comments.removeWhere((c) => c.username == m.username); });
+            Navigator.pop(context);
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.flag_outlined, color: Colors.orangeAccent),
+          title: const Text('Signaler cet utilisateur', style: TextStyle(color: Colors.white)),
+          onTap: () async {
+            Navigator.pop(context);
+            if (m.userId != null) await ApiService.reportUser(m.userId!, reason: 'harcelement');
+            if (mounted) _snack('Signalement envoyé, merci.');
+          },
+        ),
+        if (m.userId != null)
+          ListTile(
+            leading: const Icon(Icons.block, color: AppColors.error),
+            title: const Text('Bloquer cet utilisateur', style: TextStyle(color: Colors.white)),
+            onTap: () async {
+              Navigator.pop(context);
+              setState(() { _mutedUsers.add(m.username!); _comments.removeWhere((c) => c.username == m.username); });
+              await ApiService.blockUser(m.userId!);
+              if (mounted) _snack('Utilisateur bloqué.');
+            },
+          ),
+      ])),
+    );
+  }
+
+  // Signaler le live en cours (spectateur).
+  Future<void> _reportLive() async {
+    if (_liveId == null) return;
+    await ApiService.reportLive(_liveId!, reason: 'autre');
+    if (mounted) _snack('Live signalé. Merci, on va vérifier.');
   }
 
   Future<bool> _ensurePermissions() async {
@@ -421,6 +472,20 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
                   ]),
                 ),
               ],
+              // Spectateur : bouton « Signaler ce live ».
+              if (!_isLive && _liveId != null)
+                GestureDetector(
+                  onTap: _reportLive,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                    child: const Row(children: [
+                      Icon(Icons.flag_outlined, color: Colors.orangeAccent, size: 14),
+                      SizedBox(width: 4),
+                      Text('Signaler', style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ]),
+                  ),
+                ),
             ]),
           ),
           const Spacer(),
@@ -505,24 +570,30 @@ class _LiveBroadcastScreenState extends State<LiveBroadcastScreen> {
         if (_isLive && _comments.isNotEmpty)
           Positioned(
             left: 12, right: 70, bottom: 120,
-            child: IgnorePointer(
-              child: SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  controller: _commentsScroll,
-                  itemCount: _comments.length,
-                  itemBuilder: (_, i) => Padding(
+            child: SizedBox(
+              height: 200,
+              child: ListView.builder(
+                controller: _commentsScroll,
+                itemCount: _comments.length,
+                itemBuilder: (_, i) {
+                  final m = _comments[i];
+                  final display = m.system ? m.text : '@${m.username}: ${m.text}';
+                  return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
-                        child: Text(_comments[i], style: const TextStyle(color: Colors.white, fontSize: 13)),
+                      child: GestureDetector(
+                        // Appui long sur un commentaire → masquer / signaler / bloquer.
+                        onLongPress: () => _commentActions(m),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                          child: Text(display, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),
@@ -859,4 +930,14 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> {
       ]),
     );
   }
+}
+
+/// Un message du chat live : texte + auteur (pour la modération) ; `system`
+/// pour les messages automatiques (cadeaux) qui ne sont pas modérables.
+class _LiveMsg {
+  final String text;
+  final String? username;
+  final String? userId;
+  final bool system;
+  _LiveMsg({required this.text, this.username, this.userId, this.system = false});
 }
