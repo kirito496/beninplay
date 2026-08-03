@@ -339,6 +339,30 @@ class ApiService {
     return jsonDecode(res.body);
   }
 
+  /// Signaler un utilisateur à la modération.
+  static Future<Map<String, dynamic>> reportUser(String userId, {String reason = 'autre'}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/users/$userId/report'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'reason': reason}),
+      );
+      return jsonDecode(res.body);
+    } catch (_) { return {'success': false}; }
+  }
+
+  /// Signaler un live à la modération.
+  static Future<Map<String, dynamic>> reportLive(String liveId, {String reason = 'autre'}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${AppConfig.api}/api/live/$liveId/report'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'reason': reason}),
+      );
+      return jsonDecode(res.body);
+    } catch (_) { return {'success': false}; }
+  }
+
   /// Suppression DÉFINITIVE du compte (exigence Google Play).
   static Future<Map<String, dynamic>> deleteAccount() async {
     final res = await http.delete(
