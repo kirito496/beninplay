@@ -172,22 +172,16 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> with RouteAware, Widg
       final url = video.cacheUrlFor(fast: VideoCache.fastConnection);
 
       if (isCurrent) {
-        // DÉMARRAGE RAPIDE : si la vidéo est DÉJÀ en cache, on la lit depuis le
-        // disque (instantané). Sinon on la LIT EN STREAMING (lecture progressive
-        // qui démarre dès les premiers octets) au lieu d'attendre le
-        // téléchargement complet → plus d'attente sur connexion lente.
-        final cached = await VideoCache.cachedFile(url);
-        if (cached != null) {
-          ctrl = VideoPlayerController.file(
-            cached,
-            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-          );
-        } else {
-          ctrl = VideoPlayerController.networkUrl(
-            Uri.parse(url),
-            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-          );
-        }
+        // Vidéo REGARDÉE : téléchargée EN ENTIER sur le disque (priorité haute),
+        // puis lue depuis ce FICHIER LOCAL. Point crucial : la lecture en BOUCLE
+        // ne reconsomme AUCUNE donnée (le streaming réseau, lui, re-téléchargeait
+        // la vidéo à CHAQUE boucle → « charge en boucle » + forfait qui fond).
+        // Comme on lit la version 480p légère, le téléchargement reste rapide.
+        final file = await VideoCache.getForPlayback(url);
+        ctrl = VideoPlayerController.file(
+          file,
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+        );
       } else {
         // Vidéo à venir : on la télécharge en entier sur le disque (priorité
         // basse) pour qu'elle démarre INSTANTANÉMENT quand on y arrivera.

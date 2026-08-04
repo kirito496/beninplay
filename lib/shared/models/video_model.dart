@@ -72,13 +72,12 @@ class VideoModel {
   String? get lightUrl =>
       (hlsUrl != null && hlsUrl!.isNotEmpty) ? AppConfig.cdn(hlsUrl!) : null;
 
-  /// URL à mettre en cache disque selon la connexion :
-  ///  • connexion rapide → HD
-  ///  • connexion lente → 480p léger (repli sur HD si la version légère
-  ///    n'est pas encore prête).
-  /// Chaque version est un MP4 unique, donc entièrement cachable sur le disque.
-  String cacheUrlFor({required bool fast}) =>
-      fast ? hdUrl : (lightUrl ?? hdUrl);
+  /// URL à mettre en cache disque : on privilégie TOUJOURS la version 480p
+  /// légère générée par le serveur (petite → téléchargement rapide + forfait
+  /// maîtrisé), même en bonne connexion. On ne retombe sur le MP4 d'origine
+  /// (potentiellement lourd) que tant que la version légère n'est pas prête
+  /// (juste après la publication). [fast] est ignoré (gardé par compatibilité).
+  String cacheUrlFor({required bool fast}) => lightUrl ?? hdUrl;
 
   factory VideoModel.fromJson(Map<String, dynamic> json) => VideoModel(
     id: json['id'] ?? '',
